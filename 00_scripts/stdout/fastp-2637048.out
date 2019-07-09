@@ -1,0 +1,55 @@
+The working directory is /pl/active/onishimura_lab/PROJECTS/01_RobertW/RWC20_Summit_RNAseq_Pipeline/00_scripts
+files in this directory are fastp.sbatch
+stdout
+files in the above directory are 00_scripts
+01_container
+02_input
+03_fastp_output
+files in the container directory are environment.yml
+meme.simg
+summitRNAseq.simg
+files in the input directory are EO055-guts1_CGATGT_L005_R1_001.fastq.gz
+EO056-guts2_TGACCA_L005_R1_001.fastq.gz
+EO057-guts3_ACAGTG_L005_R1_001.fastq.gz
+EO058-N2-1_GCCAAT_L005_R1_001.fastq.gz
+EO059-N2-2_CAGATC_L005_R1_001.fastq.gz
+EO060-N2-3_CTTGTA_L005_R1_001.fastq.gz
+run fastp
+singularity exec ../01_container/meme.simg fastp -i ../02_input/EO055-guts1_CGATGT_L005_R1_001.fastq.gz -o ../03_fastp_output/testOut.fastq.qz --json=fastp.json --html=fastp.html
+[33mWARNING: Non existent 'bind path' source: '/rc_scratch'
+[0mDetecting adapter sequence for read1...
+No adapter detected for read1
+
+Read1 before filtering:
+total reads: 36636027
+total bases: 1831801350
+Q20 bases: 1803637143(98.4625%)
+Q30 bases: 1746408595(95.3383%)
+
+Read1 after filtering:
+total reads: 36534554
+total bases: 1826727700
+Q20 bases: 1801245403(98.605%)
+Q30 bases: 1744352124(95.4905%)
+
+Filtering result:
+reads passed filter: 36534554
+reads failed due to low quality: 100934
+reads failed due to too many N: 539
+reads failed due to too short: 0
+reads with adapter trimmed: 0
+bases trimmed due to adapters: 0
+
+Duplication rate (may be overestimated since this is SE data): 57.7664%
+
+JSON report: fastp.json
+HTML report: fastp.html
+
+fastp -i ../02_input/EO055-guts1_CGATGT_L005_R1_001.fastq.gz -o ../03_fastp_output/testOut.fastq.qz --json=fastp.json --html=fastp.html 
+fastp v0.20.0, time used: 169 seconds
+
+real	2m51.088s
+user	2m35.599s
+sys	0m6.354s
+mv ./fastp.html ../03_fastp_output
+mv ./fastp.json ../03_fastp_output
