@@ -200,7 +200,7 @@ do
   sample1=${samples[$counter]}
 
   ## execute hisat2
-  cmd2="$hisat2 -x $hisat2path -U ${inputdir}${sample1}.fastq.gz -S ${outhisat2}${sample1}.sam --summary-file ${outhisat2}${samplename}_summary.txt --no-unal -p $pthread"
+  cmd2="$hisat2 -x $hisat2path -U ${fastpTrim}${sample1}${suffix} -S ${outhisat2}${sample1}.sam --summary-file ${outhisat2}${samplename}_summary.txt --un ${outhisat2}${sample1}_unaligned.sam -p $pthread"
   echo -e "\t $ $cmd2"
   time eval $cmd2
 
