@@ -155,22 +155,22 @@ do
     echo -e "\t ${sample1[$counter]}\t ${sample2[$counter]}\t ${names[$counter]}"
 done
 
+echo -e "\n >>> Skip FASTP and HISAT2"
 
+ # FASTP to determine quality
+ echo -e "\n >>> FASTP: analyzing quality of each .fastq file"
 
-# FASTP to determine quality
-echo -e "\n >>> FASTP: analyzing quality of each .fastq file"
+ fastp="singularity run $container fastp"
 
-fastp="singularity run $container fastp"
+ for (( counter=0; counter < ${#sample1[@]}; counter++ ))
+ do
+   samplename=${names[$counter]}
+   echo -e "\n Sample Name: $samplename"
 
-for (( counter=0; counter < ${#sample1[@]}; counter++ ))
-do
-  samplename=${names[$counter]}
-  echo -e "\n Sample Name: $samplename"
+   read1=${sample1[$counter]}
+   echo -e "\n Read 1: $read1"
 
-  read1=${sample1[$counter]}
-  echo -e "\n Read 1: $read1"
-
-  read2=${sample2[$counter]}
+   read2=${sample2[$counter]}
   echo -e "\n Read 2: $read2"     
 
   #Make trimmed fastq output directories
@@ -184,15 +184,14 @@ do
   echo -e "\n FASTP quality reports are located in:\n $fastpReport"
 
     ## execute fastp
-cmd1="$fastp -i ${inputdir}${read1}${suffix} -I ${inputdir}${read2}${suffix} -o ${fastpTrim}${read1}_trim${suffix} -O ${fastpTrim}${read2}_trim${suffix} --json=${fastpReport}${read1}_report.json --html=${fastpReport}${read1}_report.html"
+    cmd1="$fastp -i ${inputdir}${read1}${suffix} -I ${inputdir}${read2}${suffix} -o ${fastpTrim}${read1}_trim${suffix} -O ${fastpTrim}${read2}_trim${suffix} --json=${fastpReport}${read1}_report.json --html=${fastpReport}${read1}_report.html"
     echo -e "\t $ ${cmd1}"
     time eval $cmd1
-
 done
 
 # HISAT2 to align to the genome
 echo -e "\n>>> HISAT2: aligning each sample to the genome"
-outhisat2=$outputdir"03_hisat2/"
+ outhisat2=$outputdir"03_hisat2/"
 mkdir -p $outhisat2
 echo -e "Alignment output located in directory $outhisat2"
 
@@ -201,14 +200,14 @@ hisat2="singularity run $container hisat2"
 for (( counter=0; counter < ${#sample1[@]}; counter++ ))
 do
   samplename=${names[$counter]}
-  echo "Sample name: $samplename"
-  read1=${sample1[$counter]}
+  echo -e "\n Sample name: $samplename"
+  read1=${sample1[$counter]}_trim
   echo "Read 1: $read1"
-  read2=${sample2[$counter]}
+  read2=${sample2[$counter]}_trim
   echo "Read 2: $read2"
-  
+  fastpTrim=$outputdir"02_fastp_trim/"$samplename/
     ## execute hisat2
-    cmd3="$hisat2 -x $hisat2path -1 ${fastpTrim}${read1}${suffix} -2 ${fastpTrim}${read2}${suffix} -S ${outhisat2}${sample1}.sam --summary-file ${outhisat2}${sample1}_summary.txt --un ${outhisat2}${sample1}_unaligned.sam -p $pthread"
+    cmd3="$hisat2 -x $hisat2path -1 ${fastpTrim}${read1}${suffix} -2 ${fastpTrim}${read2}${suffix} -S ${outhisat2}${read1}.sam --summary-file ${outhisat2}${read1}_summary.txt --un ${outhisat2}${read1}_unaligned.sam -p $pthread"
     echo -e "\t$ $cmd3"
   time eval $cmd3
 
@@ -220,22 +219,22 @@ outfeature=$outputdir"04_feature/"
 mkdir -p $outfeature
 echo -e "Tabulation output files are located in: $outfeature"
 
-featureCounts="singularity run $container featureCounts"
 # Acquire a list of .sam names
 samfilePath=()
 echo "Acquire .sam file names"
 for (( counter=0; counter < ${#names[@]}; counter++ ))
 do
-    samfile=${sample1[$counter]}.sam
+    samfile=${sample1[$counter]}_trim.sam
     echo "File: $samfile"
     samfilePath+=(${outhisat2}${samfile})
-    echo "Path: $samfilePath"
+    echo "Path: ${samfilePath[$counter]}"
 
 done
 
 # Execute featureCounts
+featureCounts="singularity run $container featureCounts"
 cmd4="$featureCounts -p -Q 20 -T ${pthread} -a $gtffile -o ${outfeature}counts.txt ${samfilePath[*]}"
-echo -e "\t $ $cmd4"
+echo -e "\n \t $ $cmd4"
 time eval $cmd4
 
 # SAMTOOLS and BAMCOVERAGE: to convert .sam output to uploadable .bam and .wg files
@@ -251,25 +250,25 @@ do
     echo -e "\t Samtools and BamCoverage convert: ${seqname}"
     
     # Samtools: compress .sam -> .bam
-    cmd5="$samtools view --threads $pthread -bS ${outhisat2}${seqname}.sam > ${samout}${seqname}.bam"
+    cmd5="$samtools view --threads $pthread -bS ${outhisat2}${seqname}_trim.sam > ${samout}${seqname}_trim.bam"
   echo -e "\t $ ${cmd5}"
   time eval $cmd5
   
     
     # Samtools: sort .bam -> _sort.bam
-    cmd6="$samtools sort --threads $pthread -o ${samout}${seqname}_sort.bam --reference $genomefa ${samout}${seqname}.bam"
+    cmd6="$samtools sort --threads $pthread -o ${samout}${seqname}_trim_sort.bam --reference $genomefa ${samout}${seqname}_trim.bam"
     echo -e "\t$ ${cmd6}"
     time eval $cmd6
     
     
     # Samtools: index _sort.bam -> _sort.bam.bai
-    cmd7="$samtools index ${samout}${seqname}_sort.bam"
+    cmd7="$samtools index ${samout}${seqname}_trim_sort.bam"
     echo -e "\t$ ${cmd7}"
     time eval $cmd7
     
     
     # bamCoverage: 
-    cmd8="$bamCoverage -b ${samout}${seqname}_sort.bam -o ${samout}${seqname}_sort.bw --outFileFormat bigwig -p $pthread --normalizeUsing CPM --binSize 1"
+    cmd8="$bamCoverage -b ${samout}${seqname}_trim_sort.bam -o ${samout}${seqname}_trim_sort.bw --outFileFormat bigwig -p $pthread --normalizeUsing CPM --binSize 1"
     echo -e "\t$ ${cmd8}"
     time eval $cmd8
 done
@@ -280,13 +279,13 @@ done
 ######## VERSIONS #############
 echo -e "\n>>> VERSIONS:"
 echo -e "\n>>> FASEQC VERSION:"
-fastqc --version
+$fastqc --version
 echo -e "\n>>> HISAT2 VERSION:"
-hisat2 --version
+$hisat2 --version
 echo -e "\n>>> SAMTOOLS VERSION:"
-samtools --version
+$samtools --version
 echo -e "\n>>> FEATURECOUNTS VERSION:"
-featureCounts -v
+$featureCounts -v
 echo -e "\n>>> BAMCOVERAGE VERSION:"
-bamCoverage --version
+$bamCoverage --version
 echo -e ">>> END: Analayzer complete."
