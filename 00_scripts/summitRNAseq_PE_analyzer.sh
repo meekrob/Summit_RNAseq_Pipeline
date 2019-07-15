@@ -87,7 +87,7 @@ echo -e ">>> INITIATING analyzer with command:\n \t $0 $@"
 inputdir="../01_input/"
 
 #This is where the ht2 files live:
-hisat2path="/projects/dcking\@colostate.edu/support_data/hisat2"
+hisat2path="/projects/dcking@colostate.edu/support_data/hisat2/ce11"
 
 #This is where the genome sequence lives:
 genomefa="/projects/dcking@colostate.edu/support_data/ce11/genome.unmasked.fa"
@@ -204,49 +204,55 @@ do
   
 done
 
-
 # HISAT2 to align to the genome
 echo -e "\n>>> HISAT2: aligning each sample to the genome"
 outhisat2=$outputdir"03_hisat2/"
 mkdir -p $outhisat2
+echo -e "Alignment output located in directory $outhisat2"
 
-for (( counter=0; counter < ${#samples1[@]}; counter++ ))
+hisat2="singularity run $container hisat2"
+
+for (( counter=0; counter < ${#sample1[@]}; counter++ ))
 do
-	samplename=${names[$counter]}
-	sample1=${samples1[$counter]}
-	sample2=${samples2[$counter]}
-	
-	#Chop off the .gz of each name:
-	unzippedfile1=${sample1}
-	unzippedfile2=${sample2}
-
-   	## execute hisat2
-   	cmd3="hisat2 -x $hisat2path -1 ${inputdir}${unzippedfile1} -2 ${inputdir}${unzippedfile2} -S ${outhisat2}${samplename}.sam --summary-file ${outhisat2}${samplename}_summary.txt --no-unal -p $pthread"
-   	echo -e "\t$ $cmd3"
-	time eval $cmd3
+  samplename=${names[$counter]}
+  echo "Sample name: $samplename"
+  read1=${sample1[$counter]}
+  echo "Read 1 file: $sample1"
+  read2=${sample2[$counter]}
+  echo "Read 2 file: $sample2"
+  
+    ## execute hisat2
+    cmd3="$hisat2 -x $hisat2path -1 ${inputdir}${read1}${suffix} -2 ${inputdir}${read2}${suffix} -S ${outhisat2}${sample1}.sam --summary-file ${outhisat2}${sample1}_summary.txt --no-unal -p $pthread"
+    echo -e "\t$ $cmd3"
+  time eval $cmd3
 
 done
-
-
 
 # FEATURECOUNTS to tabulate reads per gene:
 echo -e "\n>>> FEATURECOUNTS: Run featureCounts on all files to tabulate read counts per gene"
 outfeature=$outputdir"04_feature/"
 mkdir -p $outfeature
+echo -e "Tabulation output files are located in: $outfeature"
 
+featureCounts="singularity run $container featureCounts"
 # Acquire a list of .sam names
 samfilePath=()
+echo "Acquire .sam file names"
 for (( counter=0; counter < ${#names[@]}; counter++ ))
 do
-    samfile=${names[$counter]}.sam
+    samfile=${sample1[$counter]}.sam
+    echo "File: $samfile"
     samfilePath+=(${outhisat2}${samfile})
+    echo "Path: $samfilePath"
 
 done
 
 # Execute featureCounts
-cmd4="featureCounts -p -Q 20 -T 4 -a $gtffile -o ${outfeature}counts.txt ${samfilePath[*]}"
-echo -e "\t$ $cmd4"
+cmd4="$featureCounts -p -Q 20 -T ${pthread} -a $gtffile -o ${outfeature}counts.txt ${samfilePath[*]}"
+echo -e "\t $ $cmd4"
 time eval $cmd4
+
+#### VVVV BELOW HERE IS NOT DONE VVVVV
 
 
 # SAMTOOLS and BAMCOVERAGE: to convert .sam output to uploadable .bam and .wg files
