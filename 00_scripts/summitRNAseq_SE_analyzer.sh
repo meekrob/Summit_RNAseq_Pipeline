@@ -187,7 +187,6 @@ do
 done
 
 
-
 # HISAT2 to align to the genome
 echo -e "\n>>> HISAT2: aligning each sample to the genome"
 outhisat2=$outputdir"03_hisat2/"
@@ -231,46 +230,41 @@ cmd4="$featureCounts -Q 20 -T ${pthread} -a $gtffile -o ${outfeature}counts.txt 
 echo -e "\t $ $cmd4"
 time eval $cmd4
 
-#### VVVV BELOW HERE IS NOT DONE VVVVV
-
-
 # SAMTOOLS and BAMCOVERAGE: to convert .sam output to uploadable .bam and .wg files
 echo -e "\n>>> SAMTOOLS/BAMCOVERAGE: to convert files to uploadable _sort.bam and _sort.bam.bai files:"
 samout=$outputdir"05_samtools/"
 mkdir -p $samout
+echo -e "\t Samtools output files located in: $samout"
+samtools="singularity run $container samtools"
+bamCoverage="singularity run $container bamCoverage"
 
-for seqname in ${names[@]}
+for seqname in ${samples[@]}
 do
-    # echo
-    echo -e "\tSamtools and BamCoverage convert: ${seqname}"
+    echo -e "\t Samtools and BamCoverage convert: ${seqname}"
     
     # Samtools: compress .sam -> .bam
-    cmd5="samtools view --threads $pthread -bS ${outhisat2}${seqname}.sam > ${samout}${seqname}.bam"
-	echo -e "\t$ ${cmd5}"
-	time eval $cmd5
-	
+    cmd5="$samtools view --threads $pthread -bS ${outhisat2}${seqname}.sam > ${samout}${seqname}.bam"
+  echo -e "\t $ ${cmd5}"
+  time eval $cmd5
+  
     
     # Samtools: sort .bam -> _sort.bam
-    cmd6="samtools sort --threads $pthread -o ${samout}${seqname}_sort.bam --reference $genomefa ${samout}${seqname}.bam"
+    cmd6="$samtools sort --threads $pthread -o ${samout}${seqname}_sort.bam --reference $genomefa ${samout}${seqname}.bam"
     echo -e "\t$ ${cmd6}"
     time eval $cmd6
     
     
     # Samtools: index _sort.bam -> _sort.bam.bai
-    cmd7="samtools index ${samout}${seqname}_sort.bam"
+    cmd7="$samtools index ${samout}${seqname}_sort.bam"
     echo -e "\t$ ${cmd7}"
     time eval $cmd7
     
     
     # bamCoverage: 
-    cmd8="bamCoverage -b ${samout}${seqname}_sort.bam -o ${samout}${seqname}_sort.bw --outFileFormat bigwig -p $pthread --normalizeUsing CPM --binSize 1"
+    cmd8="$bamCoverage -b ${samout}${seqname}_sort.bam -o ${samout}${seqname}_sort.bw --outFileFormat bigwig -p $pthread --normalizeUsing CPM --binSize 1"
     echo -e "\t$ ${cmd8}"
     time eval $cmd8
-    
 done
-
-
-
 
 ######## VERSIONS #############
 echo -e "\n>>> VERSIONS:"
