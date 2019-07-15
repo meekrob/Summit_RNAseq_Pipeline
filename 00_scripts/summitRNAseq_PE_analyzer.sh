@@ -222,7 +222,7 @@ do
   echo "Read 2 file: $sample2"
   
     ## execute hisat2
-    cmd3="$hisat2 -x $hisat2path -1 ${inputdir}${read1}${suffix} -2 ${inputdir}${read2}${suffix} -S ${outhisat2}${sample1}.sam --summary-file ${outhisat2}${sample1}_summary.txt --no-unal -p $pthread"
+    cmd3="$hisat2 -x $hisat2path -1 ${fastpTrim}${read1}${suffix} -2 ${fastpTrim}${read2}${suffix} -S ${outhisat2}${sample1}.sam --summary-file ${outhisat2}${sample1}_summary.txt --un ${outhisat2}${sample1}_unaligned.sam -p $pthread"
     echo -e "\t$ $cmd3"
   time eval $cmd3
 
@@ -252,42 +252,40 @@ cmd4="$featureCounts -p -Q 20 -T ${pthread} -a $gtffile -o ${outfeature}counts.t
 echo -e "\t $ $cmd4"
 time eval $cmd4
 
-#### VVVV BELOW HERE IS NOT DONE VVVVV
-
-
 # SAMTOOLS and BAMCOVERAGE: to convert .sam output to uploadable .bam and .wg files
 echo -e "\n>>> SAMTOOLS/BAMCOVERAGE: to convert files to uploadable _sort.bam and _sort.bam.bai files:"
 samout=$outputdir"05_samtools/"
 mkdir -p $samout
+echo -e "\t Samtools output files located in: $samout"
+samtools="singularity run $container samtools"
+bamCoverage="singularity run $container bamCoverage"
 
-for seqname in ${names[@]}
+for seqname in ${sample1[@]}
 do
-    # echo
-    echo -e "\tSamtools and BamCoverage convert: ${seqname}"
+    echo -e "\t Samtools and BamCoverage convert: ${seqname}"
     
     # Samtools: compress .sam -> .bam
-    cmd5="samtools view --threads $pthread -bS ${outhisat2}${seqname}.sam > ${samout}${seqname}.bam"
-	echo -e "\t$ ${cmd5}"
-	time eval $cmd5
-	
+    cmd5="$samtools view --threads $pthread -bS ${outhisat2}${seqname}.sam > ${samout}${seqname}.bam"
+  echo -e "\t $ ${cmd5}"
+  time eval $cmd5
+  
     
     # Samtools: sort .bam -> _sort.bam
-    cmd6="samtools sort --threads $pthread -o ${samout}${seqname}_sort.bam --reference $genomefa ${samout}${seqname}.bam"
+    cmd6="$samtools sort --threads $pthread -o ${samout}${seqname}_sort.bam --reference $genomefa ${samout}${seqname}.bam"
     echo -e "\t$ ${cmd6}"
     time eval $cmd6
     
     
     # Samtools: index _sort.bam -> _sort.bam.bai
-    cmd7="samtools index ${samout}${seqname}_sort.bam"
+    cmd7="$samtools index ${samout}${seqname}_sort.bam"
     echo -e "\t$ ${cmd7}"
     time eval $cmd7
     
     
     # bamCoverage: 
-    cmd8="bamCoverage -b ${samout}${seqname}_sort.bam -o ${samout}${seqname}_sort.bw --outFileFormat bigwig -p $pthread --normalizeUsing CPM --binSize 1"
+    cmd8="$bamCoverage -b ${samout}${seqname}_sort.bam -o ${samout}${seqname}_sort.bw --outFileFormat bigwig -p $pthread --normalizeUsing CPM --binSize 1"
     echo -e "\t$ ${cmd8}"
     time eval $cmd8
-    
 done
 
 
