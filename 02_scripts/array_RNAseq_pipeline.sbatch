@@ -21,7 +21,9 @@ METAFILE=$1
 metadatafile=$(mktemp)
 head -n $SLURM_ARRAY_TASK_ID $METAFILE | tail -1 > $metadatafile
 
+# analyze script
 bash RNAseq_analyzer_191204.sh $metadatafile $SLURM_NTASKS
+# run script
 #bash RNAseq_cleanup_191204.sh $metadatafile 
 
 rm $metadatafile
