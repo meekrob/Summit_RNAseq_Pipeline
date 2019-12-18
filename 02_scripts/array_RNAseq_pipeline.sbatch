@@ -19,19 +19,9 @@ export TMP=$TMPDIR
 # make a one-line metadata file with one specific line
 METAFILE=$1
 metadatafile=$(mktemp)
-head -n $SLURM_ARRAY_ID $METAFILE | tail -1 > $metadatafile
+head -n $SLURM_ARRAY_TASK_ID $METAFILE | tail -1 > $metadatafile
 
-# change MODE or comment out to run the clean script
-MODE="RUN" 
-
-if [ "$MODE" -eq "RUN" ]
-then
-
-    bash RNAseq_analyzer_191204.sh $metadatafile $SLURM_NTASKS
-
-else # CLEAN
-
-    bash RNAseq_cleanup_191204.sh $metadatafile 
-fi
+bash RNAseq_analyzer_191204.sh $metadatafile $SLURM_NTASKS
+#bash RNAseq_cleanup_191204.sh $metadatafile 
 
 rm $metadatafile
