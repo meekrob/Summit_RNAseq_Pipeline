@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=array_rnaseq
 #SBATCH --nodes=1
-#SBATCH --ntasks=6
+#SBATCH --ntasks=12
 #SBATCH --partition=shas
 #SBATCH --qos=normal
-#SBATCH --time=0:30:00
-#SBATCH --output=log_RNAseq_pipe_%j_%a.txt
+#SBATCH --time=2:00:00
+#SBATCH --output=log_RNAseq_pipe_%A_%a.txt
 ## Run this script like:
 ##
 ## sbatch --array 1-J array_RNAseq_pipeline.sbatch metadata.txt
@@ -18,11 +18,25 @@ export TMP=$TMPDIR
 
 # make a one-line metadata file with one specific line
 METAFILE=$1
+echo "\$1 is $1 is $METAFILE"
 metadatafile=$(mktemp)
-head -n $SLURM_ARRAY_TASK_ID $METAFILE | tail -1 > $metadatafile
+echo "created $metadatafile"
+cmd="head -n $SLURM_ARRAY_TASK_ID $METAFILE | tail -1 > $metadatafile"
+echo $cmd
+eval $cmd
 
 # analyze script
-bash RNAseq_analyzer_191204.sh $metadatafile $SLURM_NTASKS
+#bash summitRNAseq_PE_analyzer.sh $metadatafile $SLURM_NTASKS
+bash safehisat_summitRNAseq_PE_analyzer.sh $metadatafile $SLURM_NTASKS
+job_status=$?
+if [ $job_status -ne 0 ]
+then
+
+    echo "$0: JOB FAILED"
+    exit $job_status
+    
+fi
+
 # run script
 #bash RNAseq_cleanup_191204.sh $metadatafile 
 
