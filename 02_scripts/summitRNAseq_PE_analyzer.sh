@@ -82,18 +82,58 @@
 
 echo -e ">>> INITIATING analyzer with command:\n \t $0 $@"
 
-########### SUPPLY A CONFIG FILE TO SPECIFY FILE AND COMMAND LOCATIONS 
-source PE_WS263_ce11.config
-#######################################################################
+
+####### MODIFY THIS SECTION #############
+# Edit this section to reflect to location of the relevant files
+
+#The input samples (metadata file and _fastq.gz files) live in directory:
+inputdir="../01_input/"
+
+#This is where the ht2 files live:
+hisat2path="/projects/rtpw@colostate.edu/ce11_ERCC_merged/ce11_ERCC"
+
+#This is where the genome sequence lives:
+genomefa="/projects/dcking@colostate.edu/support_data/ce11/genome.unmasked.fa"
+
+#This is where the gtf file lives:
+gtffile="/projects/dcking@colostate.edu/support_data/annotations/wormbase/c_elegans.PRJNA13758.WS263.canonical_geneset.gtf"
+    
+#Number of threads to use:
+pthread=$2
+
+#This is where the singularity container lives:
+container="/projects/rtpw@colostate.edu/container_images/summitRNAseq.simg"
+
+#This is the suffix of the files submitted to the analyzer:
+suffix=".fastq.gz"
+
+#This is the location of the FASTA file for trimming sequencing adapters
+adapterfa="/projects/rtpw@colostate.edu/Adapter_Trimming_FASTAs/NEBNext_Ultra_II_Index_Primers.fasta"
+
+#This is the location of the FASTA file for the ERCC spike in controls
+erccfa="/projects/rtpw@colostate.edu/ce11_ERCC_merged/ERCC92.fa"
+
+#This is the location of the GTF file for the ERCC spike in controls
+erccgtf="/projects/rtpw@colostate.edu/ce11_ERCC_merged/ERCC92.gtf"
+
+########## DONE MODIFYING ###############
 
 #This is the output_directory:
+
+DATE=`date +%Y-%m-%d`
+#DATE='2018-10-16'
+outputdir="../03_output/"$DATE"_output/"
 
 
 echo -e ">>> MAKING output directory"
 echo -e "\t mkdir $outputdir"
 mkdir -p $outputdir
 
+
+
 ####### META DATA #############
+
+
 
 #These are the sample files for read 1 (R1):
 sample1=( $(cut -f 1 --output-delimiter='\t' $1) )
@@ -129,27 +169,27 @@ done
 
  for (( counter=0; counter < ${#sample1[@]}; counter++ ))
  do
-    samplename=${names[$counter]}
-    echo -e "\n Sample Name: $samplename"
+   samplename=${names[$counter]}
+   echo -e "\n Sample Name: $samplename"
 
-    read1=${sample1[$counter]}
-    echo -e "\n Read 1: $read1"
+   read1=${sample1[$counter]}
+   echo -e "\n Read 1: $read1"
 
-    read2=${sample2[$counter]}
-    echo -e "\n Read 2: $read2"     
+   read2=${sample2[$counter]}
+  echo -e "\n Read 2: $read2"     
 
-    #Make trimmed fastq output directories
-    fastpTrim="$outputdir/02_fastp_trim/$samplename"
-    mkdir -p $fastpTrim
-    echo -e "\n FASTP trimmed files are located in:\n $fastpTrim"
+  #Make trimmed fastq output directories
+  fastpTrim=$outputdir"02_fastp_trim/"$samplename/
+  mkdir -p $fastpTrim
+  echo -e "\n FASTP trimmed files are located in:\n $fastpTrim"
 
-    #Make fastp report directories
-    fastpReport="$outputdir/01_fastp_reports"
-    mkdir -p $fastpReport
-    echo -e "\n FASTP quality reports are located in:\n $fastpReport"
+  #Make fastp report directories
+  fastpReport=$outputdir"01_fastp_reports/"
+  mkdir -p $fastpReport
+  echo -e "\n FASTP quality reports are located in:\n $fastpReport"
 
     ## execute fastp
-    cmd1="$fastp -i ${inputdir}/${read1}${suffix} -I ${inputdir}/${read2}${suffix} -o ${fastpTrim}/${read1}_trim${suffix} -O ${fastpTrim}/${read2}_trim${suffix} --json=${fastpReport}/${read1}_report.json --html=${fastpReport}/${read1}_report.html -g -x -p"
+    cmd1="$fastp -i ${inputdir}${read1}${suffix} -I ${inputdir}${read2}${suffix} -o ${fastpTrim}${read1}_trim${suffix} -O ${fastpTrim}${read2}_trim${suffix} --json=${fastpReport}${read1}_report.json --html=${fastpReport}${read1}_report.html -g -x -p"
     # input is read 1 (-i) and read 2 (-I) of sample, output is trimmed read 1 and read 2 and quality report for the pair.
     # options: 
     # -g (trim poly g)
@@ -162,37 +202,27 @@ done
 
 # HISAT2 to align to the genome
 echo -e "\n>>> HISAT2: aligning each sample to the genome"
-outhisat2="$outputdir/03_hisat2"
+ outhisat2=$outputdir"03_hisat2/"
 mkdir -p $outhisat2
 echo -e "Alignment output located in directory $outhisat2"
 
 hisat2="singularity run $container hisat2"
 
-## create a temporary directory so that hisat2 can 
-## write its core files without interfering with parallel runs
-currentdir=$(realpath $(pwd))
-tempdir=$(realpath $(mktemp -d .hisat2.XXXX))
-
 for (( counter=0; counter < ${#sample1[@]}; counter++ ))
 do
-    samplename=${names[$counter]}
-    echo -e "\n Sample name: $samplename"
-    read1=${sample1[$counter]}_trim
-    echo "Read 1: $read1"
-    read2=${sample2[$counter]}_trim
-    echo "Read 2: $read2"
-    fastpTrim=$(realpath "$outputdir/02_fastp_trim/"$samplename/)
-
-    ## execute hisat2, with absolute pathnames resolved in case of difficulties with the change of directory
-    cmd3="$hisat2 -x $(realpath $hisat2path) -1 $(realpath ${fastpTrim}${read1}${suffix}) -2 $(realpath ${fastpTrim}${read2}${suffix}) -S $(realpath ${outhisat2}${read1}.sam) --summary-file $(realpath ${outhisat2}${read1}_summary.txt) --un-conc $(realpath ${outhisat2}${read1}_unaligned.sam) -p $pthread"
+  samplename=${names[$counter]}
+  echo -e "\n Sample name: $samplename"
+  read1=${sample1[$counter]}_trim
+  echo "Read 1: $read1"
+  read2=${sample2[$counter]}_trim
+  echo "Read 2: $read2"
+  fastpTrim=$outputdir"02_fastp_trim/"$samplename/
+    ## execute hisat2
+    cmd3="$hisat2 -x $hisat2path -1 ${fastpTrim}${read1}${suffix} -2 ${fastpTrim}${read2}${suffix} -S ${outhisat2}${read1}.sam --summary-file ${outhisat2}${read1}_summary.txt --un-conc ${outhisat2}${read1}_unaligned.sam -p $pthread"
     echo -e "\t$ $cmd3"
-    cd $tempdir
-    time eval $cmd3
-    cd $currentdir
-done
+  time eval $cmd3
 
-# in case the loop quits before this command is run
-cd $currentdir
+done
 
 # FEATURECOUNTS to tabulate reads per gene:
 echo -e "\n>>> FEATURECOUNTS: Run featureCounts on all files to tabulate read counts per gene"
