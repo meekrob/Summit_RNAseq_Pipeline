@@ -376,8 +376,8 @@ done
 
 ######## VERSIONS #############
 echo -e "\n>>> VERSIONS:"
-echo -e "\n>>> FASEQC VERSION:"
-$fastqc --version
+echo -e "\n>>> FASTP VERSION:"
+$fastp --version
 echo -e "\n>>> HISAT2 VERSION:"
 $hisat2 --version
 echo -e "\n>>> SAMTOOLS VERSION:"
