@@ -139,6 +139,11 @@ featureCounts="singularity run $container featureCounts"
 
 
 ########## DONE MODIFYING ###############
+# realpath hack
+realpath() {
+    # singularity configuration seems to have a problem with the '/gpfs/summit/scratch/... configuration' 
+    /usr/bin/realpath $@ | sed 's/\/gpfs\/summit\/scratch/\/scratch\/summit/';
+}
 
 #This is the output_directory:
 
@@ -255,6 +260,7 @@ do
     echo -e "\t$ $cmd3"
     cd $tempdir
     time eval $cmd3
+
     # quit on fail
     if [ $? -ne 0 ]
     then
@@ -265,7 +271,7 @@ do
     cd $currentdir
 done
 
-rmdir $tempdir
+rmdir $tempdir || ls -al $tempdir
 # in case the loop quits before this command is run
 cd $currentdir
 
@@ -354,9 +360,8 @@ do
         exit $fail_status
     fi
 
-
     # bamCoverage: 
-    cmd8="$bamCoverage -b ${samout}${seqname}_trim_sort.bam -o ${samout}${seqname}_trim_sort.bw --outFileFormat bigwig -p $pthread --normalizeUsing CPM --binSize 1"
+    cmd8="$bamCoverage -b $(realpath ${samout}${seqname}_trim_sort.bam) -o $(realpath ${samout}${seqname}_trim_sort.bw) --outFileFormat bigwig -p $pthread --normalizeUsing CPM --binSize 1"
     echo -e "\t$ ${cmd8}"
     time eval $cmd8
     # quit on fail
