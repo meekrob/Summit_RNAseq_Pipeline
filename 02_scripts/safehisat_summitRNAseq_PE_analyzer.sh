@@ -120,11 +120,12 @@ erccgtf="/projects/rtpw@colostate.edu/ce11_ERCC_merged/ERCC92.gtf"
 ### CONTAINER ALIASES ###
 module purge
 module load singularity/3.3.0
-fastp="singularity run $container fastp"
-hisat2="singularity run $container hisat2"
-samtools="singularity run $container samtools"
-bamCoverage="singularity exec --bind /scratch/summit/$USER:/tmp $container bamCoverage"
-featureCounts="singularity run $container featureCounts"
+container_args="--bind /scratch/summit/$USER:/tmp --bind /scratch/summit:/gpfs/summit/scratch $container"
+fastp="singularity run $container_args fastp"
+hisat2="singularity run $container_args hisat2"
+samtools="singularity run $container_args samtools"
+bamCoverage="singularity exec $container_args bamCoverage"
+featureCounts="singularity run $container_args featureCounts"
 
 ### STANDARD PROGRAM INSTALL###
 # module purge
@@ -140,17 +141,17 @@ featureCounts="singularity run $container featureCounts"
 
 ########## DONE MODIFYING ###############
 # realpath hack
-realpath() {
-    # singularity configuration seems to have a problem with the '/gpfs/summit/scratch/... configuration' 
-    /usr/bin/realpath $@ | sed 's/\/gpfs\/summit\/scratch/\/scratch\/summit/';
-}
+#realpath() {
+    ## singularity configuration seems to have a problem with the '/gpfs/summit/scratch/... configuration' 
+    #/usr/bin/realpath $@ | sed 's/\/gpfs\/summit\/scratch/\/scratch\/summit/';
+#}
 
 #This is the output_directory:
 
-#DATE=`date +%Y-%m-%d`
+DATE=`date +%Y-%m-%d`
 DATE=$(date +%Y-%m-%d-%H_%M)
 #outputdir="../03_output/"$DATE"_output/"
-outputdir="../03_output_scratch/"$DATE"_ARRAYoutput/"
+outputdir="../03_output_scratch/"$DATE"_output/"
 
 
 echo -e ">>> MAKING output directory"
@@ -256,7 +257,7 @@ do
     echo "Read 2: $read2"
     fastpTrim=$(realpath ${outputdir}/02_fastp_trim/$samplename/)
     ## execute hisat2, with absolute pathnames resolved in case of difficulties with the change of directory
-    cmd3="$hisat2 -x $hisat2path -1 $(realpath ${fastpTrim}/${read1}${suffix}).gz -2 $(realpath ${fastpTrim}/${read2}${suffix}).gz -S $(realpath ${outhisat2}/${read1}.sam) --summary-file $(realpath ${outhisat2}/${read1}_summary.txt) --un-conc $(realpath ${outhisat2}/${read1}_unaligned.sam) -p $pthread"
+    cmd3="$hisat2 -x $hisat2path -1 $(realpath ${fastpTrim}/${read1}${suffix}).gz -2 $(realpath ${fastpTrim}/${read2}${suffix}).gz -S $(realpath ${outhisat2}/${read1}.sam) --summary-file $(realpath ${outhisat2}/${read1}_summary.txt) --un-conc $(realpath ${outhisat2}/${read1}_unaligned.sam) -p 1"
     echo -e "\t$ $cmd3"
     cd $tempdir
     time eval $cmd3

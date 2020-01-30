@@ -4,8 +4,8 @@
 #SBATCH --ntasks=12
 #SBATCH --partition=shas
 #SBATCH --qos=normal
-#SBATCH --time=2:00:00
-#SBATCH --output=log_RNAseq_pipe_%A_%a.txt
+#SBATCH --time=4:30:00
+#SBATCH --output=%A_%a_array_rnaseq.txt
 ## Run this script like:
 ##
 ## sbatch --array 1-J array_RNAseq_pipeline.sbatch metadata.txt
