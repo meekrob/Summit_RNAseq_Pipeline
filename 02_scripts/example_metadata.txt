@@ -1,0 +1,4 @@
+leftreads_1 rightreads_1 name_1
+leftreads_2 rightreads_2 name_2
+leftreads_3 rightreads_3 name_3
+leftreads_4 rightreads_4 name_4
