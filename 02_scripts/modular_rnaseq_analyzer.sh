@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# SLURM HEADERS
-# SLURM HEADERS
-# SLURM HEADERS
-# SLURM HEADERS
-# SLURM HEADERS
-# SLURM HEADERS
-# SLURM HEADERS
-# set -x
+#SBATCH --job-name=mod_rnaseq
+#SBATCH --nodes=1
+#SBATCH --ntasks=12
+#SBATCH --partition=shas
+#SBATCH --qos=normal
+#SBATCH --time=1:00:00
+#SBATCH --output=%j_mod_rnaseq.txt
 
-filename="metadata.txt"
+filename=$1
+shift
 
 jobsteps=( qc align reformat count )
 jobnames=( $@ )
@@ -57,6 +57,8 @@ function do_qc()
     echo "in do_qc"
 }
 
+slurm_align_args="--ntasks=1 --time=1:00:00"
+
 function do_align()
 # PROGRAMS USED:
 # FILES USED:
@@ -87,13 +89,28 @@ function do_count()
 function run_fxns()
 {
     
+    dependancy_id=""
     for jobstep in ${jobnames[*]}
     do
         fname="do_$jobstep"
-        echo "doing jobstep: $fname"
+        slurm_varname="\$slurm_${jobstep}_args"
+        slurm_vals=$(eval echo $slurm_varname)
+        if [ -n "$dependancy_id" ]
+        then
+            slurm_vals="$slurm_vals $dependancy_id"
+        fi
+
         if hash $fname 2>/dev/null
         then
-            $fname $index
+            echo $slurm_vals
+            if [ -z "$SLURM_TASK_ID" ] # YOU ARE NOT INSIDE SLURM, LAUNCH WITH SBATCH
+            then
+                dependancy_id=$(sbatch -b $slurm_vals $THIS_SCRIPT $jobstep)
+            else                       # YOU ARE INSIDE SLURM, RUN THE FUNCTION
+                cmd="$fname $index"
+                echo $cmd
+                eval $cmd
+            fi
         else
             echo "can't execute $fname, it is not defined"
         fi
