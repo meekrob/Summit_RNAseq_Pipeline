@@ -84,6 +84,8 @@ then
         errecho "rep2_fastq: $rep2_fastq"
         errecho "input_fastq: $input_fastq"
         errecho "Setting up pipeline for $label"
+        OUTFILE="$label.jobs.log"
+        O="--o $OUTFILE"
 
         #ALIGN
         # FILENAMES
@@ -94,9 +96,9 @@ then
         if [[ " $jobsteps " =~ " BWA " ]] 
         then
             # you can configure specific time, or other resources, here
-            align_jid1=$(sb $SUBMIT BWA $rep1_fastq  $rep1_sam)
-            align_jid2=$(sb $SUBMIT BWA $rep2_fastq  $rep2_sam)
-            align_jid3=$(sb $SUBMIT BWA $input_fastq $input_sam)
+            align_jid1=$(sb $O $SUBMIT BWA $rep1_fastq  $rep1_sam)
+            align_jid2=$(sb $O $SUBMIT BWA $rep2_fastq  $rep2_sam)
+            align_jid3=$(sb $O $SUBMIT BWA $input_fastq $input_sam)
         fi
 
         #CONVERT FORMAT
@@ -108,9 +110,10 @@ then
         if [[ " $jobsteps " =~ " BAM " ]] 
         then
             # you can configure specific time, or other resources, here
-            bam_jid1=$(sb --dependancy=afterok:$align_jid1 $SUBMIT BAM $rep1_sam $rep1_bam)
-            bam_jid2=$(sb --dependancy=afterok:$align_jid2 $SUBMIT BAM $rep2_sam $rep2_bam)
-            bam_jid3=$(sb --dependancy=afterok:$align_jid3 $SUBMIT BAM $input_sam $input_bam)
+            D=$(deps $align_jid1)
+            bam_jid1=$(sb $O $D $SUBMIT BAM $rep1_sam $rep1_bam)
+            bam_jid2=$(sb $O $D $SUBMIT BAM $rep2_sam $rep2_bam)
+            bam_jid3=$(sb $O $D $SUBMIT BAM $input_sam $input_bam)
         fi
 
         # COMPUTE SIGNAL FILES
@@ -125,11 +128,11 @@ then
         # JOBS
         if [[ " $jobsteps " =~ " SPP " ]] 
         then
-            d=$(deps $bam_jid1 $bam_jid3)
-            spp_jid1=$(sb $d $SUBMIT SPP $rep1_bam $input_bam $rep1_narrowPeak)
+            D=$(deps $bam_jid1 $bam_jid3)
+            spp_jid1=$(sb $O $D $SUBMIT SPP $rep1_bam $input_bam $rep1_narrowPeak)
 
-            d=$(deps $bam_jid2 $bam_jid3)
-            spp_jid2=$(sb $d $SUBMIT SPP $rep2_bam $input_bam $rep2_narrowPeak)
+            D=$(deps $bam_jid2 $bam_jid3)
+            spp_jid2=$(sb $O $D $SUBMIT SPP $rep2_bam $input_bam $rep2_narrowPeak)
         fi
 
         # IDR
