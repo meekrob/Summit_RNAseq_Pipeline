@@ -7,10 +7,14 @@
 #SBATCH --time=1:00:00
 #SBATCH --output=%j_mod_rnaseq.txt
 
+# modular_rnaseq_analyzer.sh
+# modular_rnaseq_analyzer.sh metadatafile jobstep[s]
 filename=$1
 shift
 
+# These are the individual functions in the pipeline, defined below
 jobsteps=( qc align reformat count )
+# This is the step or steps specified on the command line, after the metadata file
 jobnames=( $@ )
 
 function parse_and_launch() 
