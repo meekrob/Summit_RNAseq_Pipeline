@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
-#
-#
-# In order to serve as both the controlling script and individual
-# job steps, this script detects whether or not it is being called in
-# SLURM job.
+#SBATCH --nodes=1
+#SBATCH --ntasks=12
+#SBATCH --time=1:00:00
+#SBATCH --qos=normal
+#SBATCH --partition=shas
+#SBATCH --open-mode=append
+# --open-mode=append assures that the log files will be appended to from different jobs
+# These directives will serve as defaults when submitted via sbatch
+# but are comments when run via bash
+NTHREADS=${SLURM_NTASKS} # passes --ntasks set above
+echo "[$0] $SLURM_JOB_NAME $@" # log the command line
+export TMPDIR=$SLURM_SCRATCH
+export TMP=$TMPDIR
 SUBMIT=$0
 jobsteps="BWA BAM SPP IDR" 
+# the BWA indexes 
+bwa_genome=/projects/dcking@colostate.edu/support_data/bwa-index/ce11.unmasked.fa
+
+
+
 errecho()
 {
     1>&2 echo $@
@@ -16,7 +29,6 @@ run()
     errecho "running $@"
     #time eval $@
 }
-NTASKS=1 # need to change args to pass this in
 sb()
 {
     errecho "sb: $@"
@@ -28,6 +40,14 @@ sb()
     jid=$(( ${SLURM_JOB_ID:=0} + 1))
     SLURM_JOB_ID=$jid bash $0 $@
     echo $jid
+}
+deps() 
+{
+    vars="$@"
+    vars=${vars// /,}
+    d=""
+    [ -n "$vars" ] && d="-d afterok:$vars"
+    echo $d
 }
 
 if [ -z "$SLURM_JOB_ID" ]
@@ -105,9 +125,11 @@ then
         # JOBS
         if [[ " $jobsteps " =~ " SPP " ]] 
         then
-            # you can configure specific time, or other resources, here
-            spp_jid1=$(sb --dependancy=afterok:$bam_jid1,$bam_jid3 $SUBMIT SPP $rep1_bam $input_bam $rep1_narrowPeak)
-            spp_jid2=$(sb --dependancy=afterok:$bam_jid2,$bam_jid3 $SUBMIT SPP $rep2_bam $input_bam $rep2_narrowPeak)
+            d=$(deps $bam_jid1 $bam_jid3)
+            spp_jid1=$(sb $d $SUBMIT SPP $rep1_bam $input_bam $rep1_narrowPeak)
+
+            d=$(deps $bam_jid2 $bam_jid3)
+            spp_jid2=$(sb $d $SUBMIT SPP $rep2_bam $input_bam $rep2_narrowPeak)
         fi
 
         # IDR
@@ -143,7 +165,7 @@ else
     then
         infastq=$1
         outsam=$2
-        cmd="bwa mem -t $SLURM_NTASKS -i $infastq -i $outsam"
+        cmd="bwa mem -t $SLURM_NTASKS $genome $infastq > $outsam"
         run $cmd
 
     # BAM
@@ -151,7 +173,10 @@ else
     then
         insam=$1
         outbam=$2
-        cmd="samtools view -@ $SLURM_NTASKS -i $insam | samtools sort -@ $SLURM_NTASKS > $outbam"
+        filter="-F 1536"
+        quality="-q 30"
+        sort_prefix="$TMPDIR/samsort_$SLURM_JOB_ID"
+        cmd="samtools view -@ $SLURM_NTASKS -b $filter $quality -S ${insam} | samtools sort -T $sort_prefix -@ $SLURM_NTASKS -o ${outbam}"
         run $cmd
         cmd="samtools index $outbam"
         run $cmd
