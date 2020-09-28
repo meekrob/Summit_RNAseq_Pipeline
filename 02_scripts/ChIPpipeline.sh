@@ -196,7 +196,7 @@ else
              -out=$prefix.ccscores"
         run $cmd
     
-    # IDR
+#IDR ###################################
     elif [ $jobstep == "IDR" ]
     then
         rep1=$1
@@ -204,14 +204,19 @@ else
         cmd="idr $rep1 $rep2"
         run $cmd
 
-    # BZ
+#BZ ####################################
     elif [ $jobstep == "BW" ]
     then
         errecho "jobstep BW"
+
+#UNION #################################
+    elif [ $jobstep == "UNION" ]
+    then
+        errecho "jobstep UNION"
     
-    # Not defined
+#NOT DEFINED
     else
-        errecho "jobstep $jobstep is not defined. Must be one of ${jobstep[@]}"
+        errecho "jobstep $jobstep is not defined. Must be one of $jobsteps"
 
     fi # END
 
