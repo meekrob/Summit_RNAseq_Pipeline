@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --nodes=1
-#SBATCH --ntasks=12
-#SBATCH --time=1:00:00
-#SBATCH --qos=normal
+#SBATCH --ntasks=1
+#SBATCH --time=0:35:00
 #SBATCH --partition=shas
 #SBATCH --open-mode=append
 # --open-mode=append assures that the log files will be appended to from different jobs
@@ -13,10 +12,9 @@ echo "[$0] $SLURM_JOB_NAME $@" # log the command line
 export TMPDIR=$SLURM_SCRATCH
 export TMP=$TMPDIR
 SUBMIT=$0
-jobsteps="BWA BAM SPP IDR" 
+jobsteps=SPP #"BWA BAM SPP" #IDR
 # the BWA indexes 
 bwa_genome=/projects/dcking@colostate.edu/support_data/bwa-index/ce11.unmasked.fa
-
 
 
 errecho()
@@ -26,20 +24,12 @@ errecho()
 
 run()
 {
-    errecho "running $@"
-    #time eval $@
+    echo "running $@"
+    time eval $@
 }
 sb()
 {
-    errecho "sb: $@"
-    while [[ ! $jobsteps =~ $1 ]] # for dry-run, clear potention sbatch args
-    do
-        shift
-    done
-    #sbatch -b --ntasks=$NTASKS $@
-    jid=$(( ${SLURM_JOB_ID:=0} + 1))
-    SLURM_JOB_ID=$jid bash $0 $@
-    echo $jid
+    sbatch --parsable $@
 }
 deps() 
 {
@@ -85,7 +75,7 @@ then
         errecho "input_fastq: $input_fastq"
         errecho "Setting up pipeline for $label"
         OUTFILE="$label.jobs.log"
-        O="--o $OUTFILE"
+        O="-o $OUTFILE"
 
         #ALIGN
         # FILENAMES
@@ -129,10 +119,10 @@ then
         if [[ " $jobsteps " =~ " SPP " ]] 
         then
             D=$(deps $bam_jid1 $bam_jid3)
-            spp_jid1=$(sb $O $D $SUBMIT SPP $rep1_bam $input_bam $rep1_narrowPeak)
+            spp_jid1=$(sb $O $D $SUBMIT SPP $label $rep1_bam $input_bam $rep1_narrowPeak)
 
             D=$(deps $bam_jid2 $bam_jid3)
-            spp_jid2=$(sb $O $D $SUBMIT SPP $rep2_bam $input_bam $rep2_narrowPeak)
+            spp_jid2=$(sb $O $D $SUBMIT SPP $label $rep2_bam $input_bam $rep2_narrowPeak)
         fi
 
         # IDR
@@ -141,7 +131,8 @@ then
         # JOBS
         if [[ " $jobsteps " =~ " IDR " ]] 
         then
-            idr_jid=$(sb --dependancy=afterok:$spp_jid1,$spp_jid2 $SUBMIT IDR $rep1_narrowPeak $rep2_narrowPeak $idr_out)
+            D=$(deps $spp_jid1 $spp_jid2)
+            idr_jid=$(sb $O $D $SUBMIT IDR $rep1_narrowPeak $rep2_narrowPeak $idr_out)
         fi
 
         # Use IDR as the rejoin point from all of the branches.
@@ -163,15 +154,16 @@ else
     jobstep=$1
     shift
 
-    # BWA
+    source /projects/dcking@colostate.edu/paths.bashrc
+#BWA ###################################
     if [ $jobstep == "BWA" ]
     then
         infastq=$1
         outsam=$2
-        cmd="bwa mem -t $SLURM_NTASKS $genome $infastq > $outsam"
+        cmd="bwa mem -t $SLURM_NTASKS $bwa_genome $infastq > $outsam"
         run $cmd
 
-    # BAM
+#BAM ###################################
     elif [ $jobstep == "BAM" ]
     then
         insam=$1
@@ -183,14 +175,25 @@ else
         run $cmd
         cmd="samtools index $outbam"
         run $cmd
+        cmd="samtools quickcheck $outbam && rm -v $insam"
+        run $cmd
 
-    # SPP
+#SPP ###################################
     elif [ $jobstep == "SPP" ]
     then
-        rep=$1
-        input=$2
-        outfile=$3
-        cmd="spp $rep $input > $outfile"
+        prefix=$1
+        rep=$2
+        input=$3
+        outfile=$4
+        FRAGLEN=150
+        SPP=spp # loadbx has bin/spp as wrapper to run_spp.R
+        cmd="$SPP -c=$rep   \
+             -i=$input \
+             -npeak=300000  \
+             -odir=.  \
+             -speak=${FRAGLEN} \
+             -savr -savp -rf  \
+             -out=$prefix.ccscores"
         run $cmd
     
     # IDR
