@@ -35,10 +35,26 @@ REQUIRED PROGRAMS:
     bedtools
 
 REQUIRED FILES:
+    metadatafile
     bwa genome indexes
     black list BED file.
     A file with the chromosome sizes.
 
+METADATA FORMAT:
+Four columns, whitespace delimited. Comment lines are specified with '#' as the first character.
+
+Example:
+#stage rep1 rep2 input
+LE LE_1.fastq LE_2.fastq LE_input.fastq 
+L1 L1_1.fastq L1_2.fastq L1_input.fastq 
+#L3 L3_1.fastq L3_2.fastq L3_input.fastq 
+
+TO ADAPT:
+    Adapting to other datasets- The data must contain two replicate file and one input control
+    in fastq format. Multiple experiments with the same structure are specified in the metadata
+    file.
+    Adapting to a non-SLURM environment- you must override the function 'sb' and scrub arguments
+    preceding the jobstep argument.
 
 Last edit:
     Mon Sep 28 12:21:23 MDT 2020
