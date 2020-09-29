@@ -1,27 +1,33 @@
 #!/usr/bin/env bash
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
+#SBATCH --ntasks=12
 #SBATCH --time=0:35:00
 #SBATCH --partition=shas
-#SBATCH --open-mode=append
 # --open-mode=append assures that the log files will be appended to from different jobs
 # These directives will serve as defaults when submitted via sbatch
 # but are comments when run via bash
 NTHREADS=${SLURM_NTASKS} # passes --ntasks set above
 echo "[$0] $SLURM_JOB_NAME $@" # log the command line
-export TMPDIR=$SLURM_SCRATCH
-export TMP=$TMPDIR
 SUBMIT=$0
-jobsteps=SPP #"BWA BAM SPP" #IDR
+jobsteps="BWA BAM SPP" #IDR
 # the BWA indexes 
 bwa_genome=/projects/dcking@colostate.edu/support_data/bwa-index/ce11.unmasked.fa
+# PROJECT ORGANIZATION
+input_dir=01_FASTQ
+align_dir=02_ALIGN
+spp_dir=03_SPP
+idr_dir=04_IDR
 
+for dir in $align_dir $spp_dir $idr_dir
+do
+    mkdir -pv $dir
+done
 
+# Helper functions
 errecho()
 {
     1>&2 echo $@
 }
-
 run()
 {
     echo "running $@"
@@ -60,6 +66,7 @@ then
     # the pipeline fails at some specific step.
     while read label rep1_fastq rep2_fastq input_fastq
     do
+        stages_jids=""
         # skip comment lines
         if [ ${label:0:1} == '#' ] 
         then
@@ -67,15 +74,10 @@ then
             continue
         fi
 
-        errecho -e "\n-----------------------------------------------"
-        errecho "label: $label"
-        errecho "-----------------------------------------------"
-        errecho "rep1_fastq: $rep1_fastq"
-        errecho "rep2_fastq: $rep2_fastq"
-        errecho "input_fastq: $input_fastq"
-        errecho "Setting up pipeline for $label"
-        OUTFILE="$label.jobs.log"
-        O="-o $OUTFILE"
+        BASE_LOGFILE="$label.jobs.log.$(date +%y%m%d.%H%M)"
+        date > $BASE_LOGFILE
+        echo -e "\n-----------------------------------------------" >> $BASE_LOGFILE
+        echo -e "${label}\t${rep1_fastq}\t${rep2_fastq}\t${input_fastq}" >> $BASE_LOGFILE
 
         #ALIGN
         # FILENAMES
@@ -86,9 +88,11 @@ then
         if [[ " $jobsteps " =~ " BWA " ]] 
         then
             # you can configure specific time, or other resources, here
-            align_jid1=$(sb $O $SUBMIT BWA $rep1_fastq  $rep1_sam)
-            align_jid2=$(sb $O $SUBMIT BWA $rep2_fastq  $rep2_sam)
-            align_jid3=$(sb $O $SUBMIT BWA $input_fastq $input_sam)
+            T="--time=0:05:00"
+            align_jid1=$(sb $SUBMIT BWA ${input_dir}/$rep1_fastq  ${align_dir}/$rep1_sam)
+            align_jid2=$(sb $SUBMIT BWA ${input_dir}/$rep2_fastq  ${align_dir}/$rep2_sam)
+            align_jid3=$(sb $SUBMIT BWA ${input_dir}/$input_fastq ${align_dir}/$input_sam)
+            stage_jids="$stage_jids $align_jid1 $align_jid2 $align_jid3"
         fi
 
         #CONVERT FORMAT
@@ -101,9 +105,10 @@ then
         then
             # you can configure specific time, or other resources, here
             D=$(deps $align_jid1)
-            bam_jid1=$(sb $O $D $SUBMIT BAM $rep1_sam $rep1_bam)
-            bam_jid2=$(sb $O $D $SUBMIT BAM $rep2_sam $rep2_bam)
-            bam_jid3=$(sb $O $D $SUBMIT BAM $input_sam $input_bam)
+            bam_jid1=$(sb $O $D $SUBMIT BAM ${align_dir}/$rep1_sam ${align_dir}/$rep1_bam)
+            bam_jid2=$(sb $O $D $SUBMIT BAM ${align_dir}/$rep2_sam ${align_dir}/$rep2_bam)
+            bam_jid3=$(sb $O $D $SUBMIT BAM ${align_dir}/$input_sam ${align_dir}/$input_bam)
+            stage_jids="$stage_jids $bam_jid1 $bam_jid2 $bam_jid3"
         fi
 
         # COMPUTE SIGNAL FILES
@@ -119,10 +124,13 @@ then
         if [[ " $jobsteps " =~ " SPP " ]] 
         then
             D=$(deps $bam_jid1 $bam_jid3)
-            spp_jid1=$(sb $O $D $SUBMIT SPP $label $rep1_bam $input_bam $rep1_narrowPeak)
+            ntasks="--ntasks=1"
+            spp_jid1=$(sb $ntasks $O $D $SUBMIT SPP $label ${align_dir}/$rep1_bam ${align_dir}/$input_bam ${spp_dir}/$rep1_narrowPeak)
 
             D=$(deps $bam_jid2 $bam_jid3)
-            spp_jid2=$(sb $O $D $SUBMIT SPP $label $rep2_bam $input_bam $rep2_narrowPeak)
+            spp_jid2=$(sb $ntasks $O $D $SUBMIT SPP $label ${align_dir}/$rep2_bam ${align_dir}/$input_bam ${spp_dir}/$rep2_narrowPeak)
+
+            stage_jids="$stage_jids $spp_jid1 $spp_jid2"
         fi
 
         # IDR
@@ -132,12 +140,25 @@ then
         if [[ " $jobsteps " =~ " IDR " ]] 
         then
             D=$(deps $spp_jid1 $spp_jid2)
-            idr_jid=$(sb $O $D $SUBMIT IDR $rep1_narrowPeak $rep2_narrowPeak $idr_out)
+            idr_jid=$(sb $O $D $SUBMIT IDR ${spp_dir}/$rep1_narrowPeak ${spp_dir}/$rep2_narrowPeak ${idr_dir}/$idr_out)
+            stage_jids="$stage_jids $idr_jid"
         fi
 
         # Use IDR as the rejoin point from all of the branches.
         IDR_JOB_IDS="$IDR_JOB_IDS $idr_jid"
 
+        # Add a command to merge the temporary log files to the base log file
+        echo "# To merge the individual jobs logs into this file:" >> $BASE_LOGFILE
+        lognames=""
+        for jid in $stage_jids
+        do
+            lognames="$lognames slurm-$jid.out"
+        done
+        if [ -n "$lognames" ]
+        then
+            echo "cat $lognames >> $BASE_LOGFILE && rm -v $lognames" >> $BASE_LOGFILE
+        fi
+        
     done < $metadatafile
 
     # MERGE 
@@ -150,14 +171,18 @@ then
 else 
 ######## THIS PART OF THE SCRIPT RUNS INSIDE SLURM, AND IS CALLED   ########
 ######## FROM THE BASH SESSION.                                     ########
-    errecho "SLURM_JOB_ID=$SLURM_JOB_ID"
+    export TMPDIR=$SLURM_SCRATCH
+    export TMP=$TMPDIR
     jobstep=$1
     shift
+    errecho "$jobstep SLURM_JOB_ID=$SLURM_JOB_ID"
 
     source /projects/dcking@colostate.edu/paths.bashrc
 #BWA ###################################
     if [ $jobstep == "BWA" ]
     then
+        2>&1 bwa | grep ^Program
+        2>&1 bwa | grep ^Version
         infastq=$1
         outsam=$2
         cmd="bwa mem -t $SLURM_NTASKS $bwa_genome $infastq > $outsam"
@@ -166,6 +191,7 @@ else
 #BAM ###################################
     elif [ $jobstep == "BAM" ]
     then
+        samtools --version
         insam=$1
         outbam=$2
         filter="-F 1536"
@@ -190,10 +216,11 @@ else
         cmd="$SPP -c=$rep   \
              -i=$input \
              -npeak=300000  \
-             -odir=.  \
+             -odir=${spp_dir}  \
              -speak=${FRAGLEN} \
-             -savr -savp -rf  \
-             -out=$prefix.ccscores"
+             -savr -rf  \
+             -savp="${spp_dir}/$prefix.pdf" \
+             -out=${spp_dir}/$prefix.ccscores"
         run $cmd
     
 #IDR ###################################
