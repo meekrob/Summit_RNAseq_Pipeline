@@ -117,30 +117,32 @@ then
         
 
         # PEAK CALLS
-        # FILENAMES
-        rep1_narrowPeak=${rep1_bam/.bam/.narrowPeak}        
-        rep2_narrowPeak=${rep2_bam/.bam/.narrowPeak}        
+        # The OUTPUT FILENAMES are not specified directly, but have the following format 
+        # (like L1_1_VS_L1_input.regionPeak.gz), 
+        rep1_regionPeak=${rep1_bam%%.bam}_VS_${input_bam%%.bam}.regionPeak.gz
+        rep2_regionPeak=${rep2_bam%%.bam}_VS_${input_bam%%.bam}.regionPeak.gz
+
         # JOBS
         if [[ " $jobsteps " =~ " SPP " ]] 
         then
             D=$(deps $bam_jid1 $bam_jid3)
             ntasks="--ntasks=1"
-            spp_jid1=$(sb $ntasks $O $D $SUBMIT SPP $label ${align_dir}/$rep1_bam ${align_dir}/$input_bam ${spp_dir}/$rep1_narrowPeak)
+            spp_jid1=$(sb $ntasks $O $D $SUBMIT SPP $label ${align_dir}/$rep1_bam ${align_dir}/$input_bam)
 
             D=$(deps $bam_jid2 $bam_jid3)
-            spp_jid2=$(sb $ntasks $O $D $SUBMIT SPP $label ${align_dir}/$rep2_bam ${align_dir}/$input_bam ${spp_dir}/$rep2_narrowPeak)
+            spp_jid2=$(sb $ntasks $O $D $SUBMIT SPP $label ${align_dir}/$rep2_bam ${align_dir}/$input_bam)
 
             stage_jids="$stage_jids $spp_jid1 $spp_jid2"
         fi
 
-        # IDR
+        # IDR launch
         # FILENAMES
-        idr_out="$label.narrowPeak"
+        idr_out="${label}_1.narrowPeak"
         # JOBS
         if [[ " $jobsteps " =~ " IDR " ]] 
         then
             D=$(deps $spp_jid1 $spp_jid2)
-            idr_jid=$(sb $O $D $SUBMIT IDR ${spp_dir}/$rep1_narrowPeak ${spp_dir}/$rep2_narrowPeak ${idr_dir}/$idr_out)
+            idr_jid=$(sb $O $D $SUBMIT IDR ${spp_dir}/$rep1_regionPeak ${spp_dir}/$rep2_regionPeak ${idr_dir}/$idr_out)
             stage_jids="$stage_jids $idr_jid"
         fi
 
@@ -210,17 +212,17 @@ else
         prefix=$1
         rep=$2
         input=$3
-        outfile=$4
+        outdir=${spp_dir}
         FRAGLEN=150
         SPP=spp # loadbx has bin/spp as wrapper to run_spp.R
         cmd="$SPP -c=$rep   \
              -i=$input \
              -npeak=300000  \
-             -odir=${spp_dir}  \
+             -odir=${outdir}  \
              -speak=${FRAGLEN} \
              -savr -rf  \
-             -savp="${spp_dir}/$prefix.pdf" \
-             -out=${spp_dir}/$prefix.ccscores"
+             -savp="${outdir}/$prefix.pdf" \
+             -out=${outdir}/$prefix.ccscores"
         run $cmd
     
 #IDR ###################################
@@ -228,7 +230,9 @@ else
     then
         rep1=$1
         rep2=$2
-        cmd="idr $rep1 $rep2"
+        outfile=$3
+        IDR_THRESHOLD=0.05
+        cmd="idr --samples $rep1 $rep2 --input-file-type narrowPeak --rank signal.value --soft-idr-threshold ${IDR_THRESHOLD} --plot --use-best-multisummit-IDR"
         run $cmd
 
 #BZ ####################################
