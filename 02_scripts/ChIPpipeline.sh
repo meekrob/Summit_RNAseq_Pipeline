@@ -66,7 +66,7 @@ then
     # the pipeline fails at some specific step.
     while read label rep1_fastq rep2_fastq input_fastq
     do
-        stages_jids=""
+        stage_jids=""
         # skip comment lines
         if [ ${label:0:1} == '#' ] 
         then
