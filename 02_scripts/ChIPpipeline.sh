@@ -7,9 +7,10 @@
 # These directives will serve as defaults when submitted via sbatch
 # but are comments when run via bash
 NTHREADS=${SLURM_NTASKS} # passes --ntasks set above
-echo "[$0] $SLURM_JOB_NAME $@" # log the command line
+echo "$SLURM_JOB_NAME[$SLURM_JOB_ID] $@" # log the command line
 SUBMIT=$0
-jobsteps="BWA BAM SPP" #IDR
+#jobsteps="BWA BAM SPP IDR UNION"
+jobsteps="SPP IDR LOG"
 # the BWA indexes 
 bwa_genome=/projects/dcking@colostate.edu/support_data/bwa-index/ce11.unmasked.fa
 # PROJECT ORGANIZATION
@@ -64,6 +65,9 @@ then
     # in order to make it possible for the pipeline to be 
     # called with an internal starting point, as when
     # the pipeline fails at some specific step.
+    all_ids=""
+    idr_filesnames=""
+    IDR_JOB_IDS=""
     while read label rep1_fastq rep2_fastq input_fastq
     do
         stage_jids=""
@@ -87,11 +91,10 @@ then
         # JOBS
         if [[ " $jobsteps " =~ " BWA " ]] 
         then
-            # you can configure specific time, or other resources, here
             T="--time=0:05:00"
-            align_jid1=$(sb $SUBMIT BWA ${input_dir}/$rep1_fastq  ${align_dir}/$rep1_sam)
-            align_jid2=$(sb $SUBMIT BWA ${input_dir}/$rep2_fastq  ${align_dir}/$rep2_sam)
-            align_jid3=$(sb $SUBMIT BWA ${input_dir}/$input_fastq ${align_dir}/$input_sam)
+            align_jid1=$(sb --job-name=bwa-${label}-1 $SUBMIT BWA ${input_dir}/$rep1_fastq  ${align_dir}/$rep1_sam)
+            align_jid2=$(sb --job-name=bwa-${label}-2 $SUBMIT BWA ${input_dir}/$rep2_fastq  ${align_dir}/$rep2_sam)
+            align_jid3=$(sb --job-name=bwa-${label}-i $SUBMIT BWA ${input_dir}/$input_fastq ${align_dir}/$input_sam)
             stage_jids="$stage_jids $align_jid1 $align_jid2 $align_jid3"
         fi
 
@@ -103,11 +106,12 @@ then
         # JOBS
         if [[ " $jobsteps " =~ " BAM " ]] 
         then
-            # you can configure specific time, or other resources, here
             D=$(deps $align_jid1)
-            bam_jid1=$(sb $O $D $SUBMIT BAM ${align_dir}/$rep1_sam ${align_dir}/$rep1_bam)
-            bam_jid2=$(sb $O $D $SUBMIT BAM ${align_dir}/$rep2_sam ${align_dir}/$rep2_bam)
-            bam_jid3=$(sb $O $D $SUBMIT BAM ${align_dir}/$input_sam ${align_dir}/$input_bam)
+            bam_jid1=$(sb --job-name=bam-${label}-1 $O $D $SUBMIT BAM ${align_dir}/$rep1_sam ${align_dir}/$rep1_bam)
+            D=$(deps $align_jid2)
+            bam_jid2=$(sb --job-name=bam-${label}-2 $O $D $SUBMIT BAM ${align_dir}/$rep2_sam ${align_dir}/$rep2_bam)
+            D=$(deps $align_jid3)
+            bam_jid3=$(sb --job-name=bam-${label}-i $O $D $SUBMIT BAM ${align_dir}/$input_sam ${align_dir}/$input_bam)
             stage_jids="$stage_jids $bam_jid1 $bam_jid2 $bam_jid3"
         fi
 
@@ -116,59 +120,76 @@ then
         # jobs
         
 
-        # PEAK CALLS
-        # The OUTPUT FILENAMES are not specified directly, but have the following format 
+        # PEAK CALLS (SPP)
+        # SPP OUTPUT FILENAMES are not specified directly, but have the following format 
         # (like L1_1_VS_L1_input.regionPeak.gz), 
         rep1_regionPeak=${rep1_bam%%.bam}_VS_${input_bam%%.bam}.regionPeak.gz
         rep2_regionPeak=${rep2_bam%%.bam}_VS_${input_bam%%.bam}.regionPeak.gz
 
-        # JOBS
+        # SPP JOBS
         if [[ " $jobsteps " =~ " SPP " ]] 
         then
+            echo "pipeline: $label SPP"
             D=$(deps $bam_jid1 $bam_jid3)
-            ntasks="--ntasks=1"
-            spp_jid1=$(sb $ntasks $O $D $SUBMIT SPP $label ${align_dir}/$rep1_bam ${align_dir}/$input_bam)
+            spp_jid1=$(sb --job-name=spp-${label}-1 $O $D $SUBMIT SPP $label ${align_dir}/$rep1_bam ${align_dir}/$input_bam $rep1_regionPeak)
 
             D=$(deps $bam_jid2 $bam_jid3)
-            spp_jid2=$(sb $ntasks $O $D $SUBMIT SPP $label ${align_dir}/$rep2_bam ${align_dir}/$input_bam)
+            spp_jid2=$(sb --job-name=spp-${label}-2 $O $D $SUBMIT SPP $label ${align_dir}/$rep2_bam ${align_dir}/$input_bam $rep2_regionPeak)
 
             stage_jids="$stage_jids $spp_jid1 $spp_jid2"
         fi
 
         # IDR launch
-        # FILENAMES
-        idr_out="${label}_1.narrowPeak"
-        # JOBS
+        # IDR FILENAMES
+        idr_out="${label}.narrowPeak"
+        idr_filenames="$idr_filenames ${idr_dir}/$idr_out"
+        # IDR JOBS
         if [[ " $jobsteps " =~ " IDR " ]] 
         then
+            echo "pipeline: $label IDR"
             D=$(deps $spp_jid1 $spp_jid2)
-            idr_jid=$(sb $O $D $SUBMIT IDR ${spp_dir}/$rep1_regionPeak ${spp_dir}/$rep2_regionPeak ${idr_dir}/$idr_out)
+            idr_jid=$(sb --ntasks=1 --time=0:00:02 --job-name=idr-${label} $D $SUBMIT IDR ${spp_dir}/$rep1_regionPeak ${spp_dir}/$rep2_regionPeak ${idr_dir}/$idr_out)
             stage_jids="$stage_jids $idr_jid"
         fi
 
         # Use IDR as the rejoin point from all of the branches.
         IDR_JOB_IDS="$IDR_JOB_IDS $idr_jid"
 
-        # Add a command to merge the temporary log files to the base log file
-        echo "# To merge the individual jobs logs into this file:" >> $BASE_LOGFILE
-        lognames=""
-        for jid in $stage_jids
-        do
-            lognames="$lognames slurm-$jid.out"
-        done
-        if [ -n "$lognames" ]
+        #if [[ " $jobsteps " =~ " LOG " ]] 
+        if true
         then
-            echo "cat $lognames >> $BASE_LOGFILE && rm -v $lognames" >> $BASE_LOGFILE
+            echo "pipeline: $label LOG "
+            [ -n "$stage_jids" ] && echo 'yes stage_jids' || echo 'no stage_jids'
+            echo $stage_jids
+            # Add a command to merge the temporary log files to the base log file
+            echo "# To merge the individual jobs logs into this file:" >> $BASE_LOGFILE
+            lognames=""
+            for jid in $stage_jids
+            do
+                lognames="$lognames slurm-$jid.out"
+            done
+            #D=$(deps $stage_ids)
+            #log_jid=$(sb --ntasks=1 --time=0:01:00 --job-name=$label.catlg --output=${label}.catlogs-%j.out $D $SUBMIT LOG $BASE_LOGFILE $lognames)
+            if [ -n "$lognames" ]
+            then
+                echo "cat $lognames >> $BASE_LOGFILE && rm -v $lognames" >> $BASE_LOGFILE
+            fi
         fi
+
+        all_ids="$all_ids $stage_jids"
         
     done < $metadatafile
 
-    # MERGE 
+    # UNION 
     # FILENAMES
-    if [[ " $jobsteps " =~ " MERGE " ]] 
+    if [[ " $jobsteps " =~ " UNION " ]] 
     then
-        union_jid=""
+        D=$(deps $IDR_JOB_IDS)
+        union_jid=$(sb $D --ntasks=1 --time=0:05:00 --job-name=union --output=union.%j.out $SUBMIT UNION union.bed  $idr_filenames)
     fi
+
+    echo "ALL JOBS SUBMITTED:"
+    echo $all_ids
 
 else 
 ######## THIS PART OF THE SCRIPT RUNS INSIDE SLURM, AND IS CALLED   ########
@@ -178,6 +199,7 @@ else
     jobstep=$1
     shift
     errecho "$jobstep SLURM_JOB_ID=$SLURM_JOB_ID"
+    date
 
     source /projects/dcking@colostate.edu/paths.bashrc
 #BWA ###################################
@@ -212,6 +234,7 @@ else
         prefix=$1
         rep=$2
         input=$3
+        output=$4
         outdir=${spp_dir}
         FRAGLEN=150
         SPP=spp # loadbx has bin/spp as wrapper to run_spp.R
@@ -220,10 +243,16 @@ else
              -npeak=300000  \
              -odir=${outdir}  \
              -speak=${FRAGLEN} \
+             -p=$SLURM_NTASKS \
              -savr -rf  \
              -savp="${outdir}/$prefix.pdf" \
              -out=${outdir}/$prefix.ccscores"
         run $cmd
+        # results do not come out sorted
+        sortTempfile="${outdir}/.${output}"
+        cmd="zcat $output | sort -k1,1 -k2,2n > $sortTempfile && mv $sortTempfile ${outdir}/$output}"
+        run $cmd
+        
     
 #IDR ###################################
     elif [ $jobstep == "IDR" ]
@@ -231,8 +260,24 @@ else
         rep1=$1
         rep2=$2
         outfile=$3
+        outtmp=${outfile/.narrowPeak/.unthresh.narrowPeak}
         IDR_THRESHOLD=0.05
-        cmd="idr --samples $rep1 $rep2 --input-file-type narrowPeak --rank signal.value --soft-idr-threshold ${IDR_THRESHOLD} --plot --use-best-multisummit-IDR"
+        echo "IDR_THRESHOLD=$IDR_THRESHOLD"
+        cmd="idr --samples $rep1 $rep2 --input-file-type narrowPeak \
+             --rank signal.value \
+             --soft-idr-threshold ${IDR_THRESHOLD} \
+             --plot --use-best-multisummit-IDR \
+             --random-seed 13 \
+             --output-file $outtmp"
+        run $cmd
+        IDR_THRESH_TRANSFORMED=$(awk -v p=${IDR_THRESHOLD} 'BEGIN{print -log(p)/log(10)}')
+        echo "IDR_THRESH_TRANSFORMED=$IDR_THRESH_TRANSFORMED"
+        idr_filter()
+        {
+            awk 'BEGIN{OFS="\t"} $12>='"${IDR_THRESH_TRANSFORMED}"' {print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10}' $1
+        }
+        declare -f idr_filter
+        cmd="idr_filter $outtmp | sort -k1 -k2,2n -u > $outfile"
         run $cmd
 
 #BZ ####################################
@@ -243,8 +288,23 @@ else
 #UNION #################################
     elif [ $jobstep == "UNION" ]
     then
-        errecho "jobstep UNION"
+        outfile=$1
+        shift
+        infiles=$@
+        cmd="cat $infiles | bed_merge_overlapping.py | sort -k1,1 -k2,2n > $outfile"
+        run $cmd
     
+#LOG ###################################
+    # append the individual slurm logs to the main log file and
+    # delete them
+    elif [ $jobstep == "LOG" ]
+    then
+        main=$1
+        shift
+        outfiles="$@"
+        #cmd="cat $outfiles >> $main && rm -v $outfiles"
+        cmd="cat $outfiles >> $main"
+        run $cmd
 #NOT DEFINED
     else
         errecho "jobstep $jobstep is not defined. Must be one of $jobsteps"
