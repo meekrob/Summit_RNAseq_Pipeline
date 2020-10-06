@@ -9,17 +9,21 @@
 NTHREADS=${SLURM_NTASKS} # passes --ntasks set above
 echo "$SLURM_JOB_NAME[$SLURM_JOB_ID] $@" # log the command line
 SUBMIT=$0
-#jobsteps="BWA BAM SPP IDR UNION"
-jobsteps="SPP IDR LOG"
+#JOBSTEPS="BWA BAM SPP IDR UNION"
+JOBSTEPS="SPP IDR LOG"
+########################################################
+##### CONFIGURATION VARIABLES
+FLANK=150 # for bedToBw
 # the BWA indexes 
-bwa_genome=/projects/dcking@colostate.edu/support_data/bwa-index/ce11.unmasked.fa
+BWA_GENOME=/projects/dcking@colostate.edu/support_data/bwa-index/ce11.unmasked.fa
+CHROMLENGTHS=/projects/dcking@colostate.edu/support_data/ce11/ce11.chrom.sizes
 # PROJECT ORGANIZATION
-input_dir=01_FASTQ
-align_dir=02_ALIGN
-spp_dir=03_SPP
-idr_dir=04_IDR
+INPUT_DIR=01_FASTQ
+ALIGN_DIR=02_ALIGN
+SPP_DIR=03_SPP
+IDR_DIR=04_IDR
 
-for dir in $align_dir $spp_dir $idr_dir
+for dir in $ALIGN_DIR $SPP_DIR $IDR_DIR
 do
     mkdir -pv $dir
 done
@@ -46,10 +50,18 @@ deps()
     [ -n "$vars" ] && d="-d afterok:$vars"
     echo $d
 }
+makeFlankFilename() 
+{   # anticipate the output filename written by bedToBw.sh 
+    # (it is not available as an argument)
+    infile=$1
+    flank=$2
+    root=${infile%.*}
+    echo ${root}x${flank}n.bw
+}
 
 if [ -z "$SLURM_JOB_ID" ]
 ######## THIS PART OF THE SCRIPT RUNS IN A NORMAL BASH SESSION    ########
-######## but launches jobsteps using sbatch (also in this script) ######## 
+######## but launches JOBSTEPS using sbatch (also in this script) ######## 
 ######## The job steps are invoked by specifying input and output ######## 
 ######## filenames only. The specific arguments to the programs   ########
 ########  called within the jobstep definitions in the sbatch     ########
@@ -59,7 +71,7 @@ then
     metadatafile=$1
     shift
 
-    [ $# -gt 0 ] && jobsteps="$@"
+    [ $# -gt 0 ] && JOBSTEPS="$@"
 
     # the "filename" portion of each block must always run 
     # in order to make it possible for the pipeline to be 
@@ -89,12 +101,12 @@ then
         rep2_sam=${rep2_fastq/.fastq/.sam}
         input_sam=${input_fastq/.fastq/.sam}
         # JOBS
-        if [[ " $jobsteps " =~ " BWA " ]] 
+        if [[ " $JOBSTEPS " =~ " BWA " ]] 
         then
             T="--time=0:05:00"
-            align_jid1=$(sb --job-name=bwa-${label}-1 $SUBMIT BWA ${input_dir}/$rep1_fastq  ${align_dir}/$rep1_sam)
-            align_jid2=$(sb --job-name=bwa-${label}-2 $SUBMIT BWA ${input_dir}/$rep2_fastq  ${align_dir}/$rep2_sam)
-            align_jid3=$(sb --job-name=bwa-${label}-i $SUBMIT BWA ${input_dir}/$input_fastq ${align_dir}/$input_sam)
+            align_jid1=$(sb --job-name=bwa-${label}-1 $SUBMIT BWA ${INPUT_DIR}/$rep1_fastq  ${ALIGN_DIR}/$rep1_sam)
+            align_jid2=$(sb --job-name=bwa-${label}-2 $SUBMIT BWA ${INPUT_DIR}/$rep2_fastq  ${ALIGN_DIR}/$rep2_sam)
+            align_jid3=$(sb --job-name=bwa-${label}-i $SUBMIT BWA ${INPUT_DIR}/$input_fastq ${ALIGN_DIR}/$input_sam)
             stage_jids="$stage_jids $align_jid1 $align_jid2 $align_jid3"
         fi
 
@@ -104,20 +116,37 @@ then
         rep2_bam=${rep2_sam/.sam/.bam}
         input_bam=${input_sam/.sam/.bam}
         # JOBS
-        if [[ " $jobsteps " =~ " BAM " ]] 
+        if [[ " $JOBSTEPS " =~ " BAM " ]] 
         then
             D=$(deps $align_jid1)
-            bam_jid1=$(sb --job-name=bam-${label}-1 $O $D $SUBMIT BAM ${align_dir}/$rep1_sam ${align_dir}/$rep1_bam)
+            bam_jid1=$(sb --job-name=bam-${label}-1 $O $D $SUBMIT BAM ${ALIGN_DIR}/$rep1_sam ${ALIGN_DIR}/$rep1_bam)
             D=$(deps $align_jid2)
-            bam_jid2=$(sb --job-name=bam-${label}-2 $O $D $SUBMIT BAM ${align_dir}/$rep2_sam ${align_dir}/$rep2_bam)
+            bam_jid2=$(sb --job-name=bam-${label}-2 $O $D $SUBMIT BAM ${ALIGN_DIR}/$rep2_sam ${ALIGN_DIR}/$rep2_bam)
             D=$(deps $align_jid3)
-            bam_jid3=$(sb --job-name=bam-${label}-i $O $D $SUBMIT BAM ${align_dir}/$input_sam ${align_dir}/$input_bam)
+            bam_jid3=$(sb --job-name=bam-${label}-i $O $D $SUBMIT BAM ${ALIGN_DIR}/$input_sam ${ALIGN_DIR}/$input_bam)
             stage_jids="$stage_jids $bam_jid1 $bam_jid2 $bam_jid3"
         fi
 
         # COMPUTE SIGNAL FILES
         # filenames
-        # jobs
+        # see function: makeFlankFilename()
+        rep1_bw=$(makeFlankFilename $rep1_bam $FLANK)
+        rep2_bw=$(makeFlankFilename $rep2_bam $FLANK)
+        input_bw=$(makeFlankFilename $input_bam $FLANK)
+        # JOBS
+        if [[ " $JOBSTEPS " =~ " BW " ]] 
+        then
+            ntasks="--ntasks=4"
+            tim="--time=0:11:00"
+            D=$(deps $bam_jid1)
+            bw_jid1=$(sb --job-name=bw-${label}-1 $ntasks $tim $D $SUBMIT BW $ALIGN_DIR/$rep1_bam $rep1_bw)
+            D=$(deps $bam_jid2)
+            bw_jid2=$(sb --job-name=bw-${label}-2 $ntasks $tim $D $SUBMIT BW $ALIGN_DIR/$rep2_bam $rep2_bw)
+            D=$(deps $bam_jid3)
+            bw_jid3=$(sb --job-name=bw-${label}-i $ntasks $tim $D $SUBMIT BW $ALIGN_DIR/$input_bam $input_bw)
+
+            stage_jids="$stage_jids $bw_jid1 $bw_jid2 $bw_jid3"
+        fi
         
 
         # PEAK CALLS (SPP)
@@ -127,14 +156,14 @@ then
         rep2_regionPeak=${rep2_bam%%.bam}_VS_${input_bam%%.bam}.regionPeak.gz
 
         # SPP JOBS
-        if [[ " $jobsteps " =~ " SPP " ]] 
+        if [[ " $JOBSTEPS " =~ " SPP " ]] 
         then
             echo "pipeline: $label SPP"
             D=$(deps $bam_jid1 $bam_jid3)
-            spp_jid1=$(sb --job-name=spp-${label}-1 $O $D $SUBMIT SPP $label ${align_dir}/$rep1_bam ${align_dir}/$input_bam $rep1_regionPeak)
+            spp_jid1=$(sb --job-name=spp-${label}-1 $O $D $SUBMIT SPP $label ${ALIGN_DIR}/$rep1_bam ${ALIGN_DIR}/$input_bam $rep1_regionPeak)
 
             D=$(deps $bam_jid2 $bam_jid3)
-            spp_jid2=$(sb --job-name=spp-${label}-2 $O $D $SUBMIT SPP $label ${align_dir}/$rep2_bam ${align_dir}/$input_bam $rep2_regionPeak)
+            spp_jid2=$(sb --job-name=spp-${label}-2 $O $D $SUBMIT SPP $label ${ALIGN_DIR}/$rep2_bam ${ALIGN_DIR}/$input_bam $rep2_regionPeak)
 
             stage_jids="$stage_jids $spp_jid1 $spp_jid2"
         fi
@@ -142,20 +171,20 @@ then
         # IDR launch
         # IDR FILENAMES
         idr_out="${label}.narrowPeak"
-        idr_filenames="$idr_filenames ${idr_dir}/$idr_out"
+        idr_filenames="$idr_filenames ${IDR_DIR}/$idr_out"
         # IDR JOBS
-        if [[ " $jobsteps " =~ " IDR " ]] 
+        if [[ " $JOBSTEPS " =~ " IDR " ]] 
         then
             echo "pipeline: $label IDR"
             D=$(deps $spp_jid1 $spp_jid2)
-            idr_jid=$(sb --ntasks=1 --time=0:00:02 --job-name=idr-${label} $D $SUBMIT IDR ${spp_dir}/$rep1_regionPeak ${spp_dir}/$rep2_regionPeak ${idr_dir}/$idr_out)
+            idr_jid=$(sb --ntasks=1 --time=0:00:02 --job-name=idr-${label} $D $SUBMIT IDR ${SPP_DIR}/$rep1_regionPeak ${SPP_DIR}/$rep2_regionPeak ${IDR_DIR}/$idr_out)
             stage_jids="$stage_jids $idr_jid"
         fi
 
         # Use IDR as the rejoin point from all of the branches.
         IDR_JOB_IDS="$IDR_JOB_IDS $idr_jid"
 
-        #if [[ " $jobsteps " =~ " LOG " ]] 
+        #if [[ " $JOBSTEPS " =~ " LOG " ]] 
         if true
         then
             echo "pipeline: $label LOG "
@@ -182,14 +211,16 @@ then
 
     # UNION 
     # FILENAMES
-    if [[ " $jobsteps " =~ " UNION " ]] 
+    if [[ " $JOBSTEPS " =~ " UNION " ]] 
     then
         D=$(deps $IDR_JOB_IDS)
         union_jid=$(sb $D --ntasks=1 --time=0:05:00 --job-name=union --output=union.%j.out $SUBMIT UNION union.bed  $idr_filenames)
     fi
 
     echo "ALL JOBS SUBMITTED:"
-    echo $all_ids
+    echo ">${all_ids}<"
+    all_ids=$(echo $all_ids) # remove ws
+    echo "jid=${all_ids// /,}"
 
 else 
 ######## THIS PART OF THE SCRIPT RUNS INSIDE SLURM, AND IS CALLED   ########
@@ -209,7 +240,7 @@ else
         2>&1 bwa | grep ^Version
         infastq=$1
         outsam=$2
-        cmd="bwa mem -t $SLURM_NTASKS $bwa_genome $infastq > $outsam"
+        cmd="bwa mem -t $SLURM_NTASKS $BWA_GENOME $infastq > $outsam"
         run $cmd
 
 #BAM ###################################
@@ -228,6 +259,25 @@ else
         cmd="samtools quickcheck $outbam && rm -v $insam"
         run $cmd
 
+#BW  ###################################
+    elif [ $jobstep == "BW" ]
+    then
+        inbam=$1
+        outbw=$2
+        outbed=${inbam/.bam/.nonlog.bed}
+        cmd="bedtools bamtobed -i $inbam > $outbed"
+        run $cmd
+        cmd="bedToBw.sh $outbed $FLANK $CHROMLENGTHS -n -bw && rm -v $outbed" 
+        run $cmd
+        bamToBw_outfile=$(makeFlankFilename $outbed $FLANK) # output file generated by previous command
+        run $cmd
+        logwig=${bamToBw_outfile/nonlogx${FLANK}n.bw/log.wig}
+        cmd="meekrob-javaGenomicsToolkit wigmath.LogTransform -p $SLURM_NTASKS -i $bamToBw_outfile -o $logwig"
+        run $cmd
+        logbw=${logwig/.wig/.bw}
+        cmd="wigToBigWig $logwig $CHROMLENGTHS $logbw && rm -v $logwig"
+        run $cmd
+        
 #SPP ###################################
     elif [ $jobstep == "SPP" ]
     then
@@ -235,7 +285,7 @@ else
         rep=$2
         input=$3
         output=$4
-        outdir=${spp_dir}
+        outdir=${SPP_DIR}
         FRAGLEN=150
         SPP=spp # loadbx has bin/spp as wrapper to run_spp.R
         cmd="$SPP -c=$rep   \
@@ -307,7 +357,7 @@ else
         run $cmd
 #NOT DEFINED
     else
-        errecho "jobstep $jobstep is not defined. Must be one of $jobsteps"
+        errecho "jobstep $jobstep is not defined. Must be one of $JOBSTEPS"
 
     fi # END
 
