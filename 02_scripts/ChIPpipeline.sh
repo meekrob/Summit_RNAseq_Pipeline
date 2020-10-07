@@ -158,9 +158,9 @@ then
             ntasks="--ntasks=4"
             tim="--time=0:03:00"
             D=$(deps $bw_jid1 $bw_jid3)
-            bws_jid1=$(sb --job-name=${label}_1-${label}i $ntasks $tim $D $SUBMIT BW-SUBTRACT $rep1_bw $input_bw $rep1_input_subtracted_bw)
+            bws_jid1=$(sb --job-name=${label}_1-${label}i $ntasks $tim $D $SUBMIT BW-SUBTRACT $SIG_DIR/$rep1_bw $SIG_DIR/$input_bw $SIG_DIR/$rep1_input_subtracted_bw)
             D=$(deps $bw_jid2 $bw_jid3)
-            bws_jid2=$(sb --job-name=${label}_2-${label}i $ntasks $tim $D $SUBMIT BW-SUBTRACT $rep2_bw $input_bw $rep1_input_subtracted_bw)
+            bws_jid2=$(sb --job-name=${label}_2-${label}i $ntasks $tim $D $SUBMIT BW-SUBTRACT $SIG_DIR/$rep2_bw $SIG_DIR/$input_bw $SIG_DIR/$rep2_input_subtracted_bw)
 
             stage_jids="$stage_jids $bws_jid1 $bws_jid2"
         fi
@@ -204,7 +204,6 @@ then
         if true
         then
             echo "pipeline: $label LOG "
-            [ -n "$stage_jids" ] && echo 'yes stage_jids' || echo 'no stage_jids'
             echo $stage_jids
             # Add a command to merge the temporary log files to the base log file
             echo "# To merge the individual jobs logs into this file:" >> $BASE_LOGFILE
@@ -322,7 +321,7 @@ else
         run $cmd
         
         # convert to bigWig (binary, compressed)
-        cmd="wigToBigWig $wigfilename $CHROMLENGTHS $outfilename && rm -v $wigfilename"
+        cmd="wigToBigWig -clip $wigfilename $CHROMLENGTHS $outfilename && rm -v $wigfilename"
         run $cmd
 
 #SPP ###################################
