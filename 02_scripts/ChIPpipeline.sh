@@ -17,6 +17,8 @@ FLANK=150 # for bedToBw
 # the BWA indexes 
 BWA_GENOME=/projects/dcking@colostate.edu/support_data/bwa-index/ce11.unmasked.fa
 CHROMLENGTHS=/projects/dcking@colostate.edu/support_data/ce11/ce11.chrom.sizes
+ALL_STAGES_UNION=allStagesUnion.bed
+ALL_STAGES_AGGREGATE=${ALL_STAGES_UNION}.df
 # PROJECT ORGANIZATION
 INPUT_DIR=01_FASTQ
 ALIGN_DIR=03_ALIGN
@@ -81,6 +83,8 @@ then
     all_ids=""
     idr_filesnames=""
     IDR_JOB_IDS=""
+    SCORE_FILEPATHS=""
+    SCORE_JOB_IDS="" 
     while read label rep1_fastq rep2_fastq input_fastq
     do
         stage_jids=""
@@ -153,6 +157,7 @@ then
         # 
         rep1_input_subtracted_bw="${label}_1_minus_input.bw"
         rep2_input_subtracted_bw="${label}_2_minus_input.bw"
+        SCORE_FILEPATHS="$SCORE_FILEPATHS $SIG_DIR/$rep1_input_subtracted_bw $SIG_DIR/$rep2_input_subtracted_bw"
         if [[ " $JOBSTEPS " =~ " BW-SUBTRACT " ]] 
         then
             ntasks="--ntasks=4"
@@ -163,6 +168,7 @@ then
             bws_jid2=$(sb --job-name=${label}_2-${label}i $ntasks $tim $D $SUBMIT BW-SUBTRACT $SIG_DIR/$rep2_bw $SIG_DIR/$input_bw $SIG_DIR/$rep2_input_subtracted_bw)
 
             stage_jids="$stage_jids $bws_jid1 $bws_jid2"
+            SCORE_JOB_IDS="$SCORE_JOB_IDS $bws_jid1 $bws_jid2"
         fi
 
         # PEAK CALLS (SPP)
@@ -193,7 +199,7 @@ then
         then
             echo "pipeline: $label IDR"
             D=$(deps $spp_jid1 $spp_jid2)
-            idr_jid=$(sb --ntasks=1 --time=0:00:02 --job-name=idr-${label} $D $SUBMIT IDR ${SPP_DIR}/$rep1_regionPeak ${SPP_DIR}/$rep2_regionPeak ${IDR_DIR}/$idr_out)
+            idr_jid=$(sb --ntasks=1 --time=0:02:00 --job-name=idr-${label} $D $SUBMIT IDR ${SPP_DIR}/$rep1_regionPeak ${SPP_DIR}/$rep2_regionPeak ${IDR_DIR}/$idr_out)
             stage_jids="$stage_jids $idr_jid"
         fi
 
@@ -229,7 +235,13 @@ then
     if [[ " $JOBSTEPS " =~ " UNION " ]] 
     then
         D=$(deps $IDR_JOB_IDS)
-        union_jid=$(sb $D --ntasks=1 --time=0:05:00 --job-name=union --output=union.%j.out $SUBMIT UNION union.bed  $idr_filenames)
+        union_jid=$(sb $D --ntasks=1 --time=0:05:00 --job-name=union --output=union.%j.out $SUBMIT UNION $ALL_STAGES_UNION  $idr_filenames)
+    fi
+    # AGGREGATE
+    if [[ " $JOBSTEPS " =~ " AGGREGATE " ]]
+    then
+        D=$(deps $SCORE_JOB_IDS)
+        aggregate_jid=$(sb $D  --ntasks=1 --time=0:05:00 --job-name=aggregate $SUBMIT AGGREGATE $ALL_STAGES_UNION $ALL_STAGES_AGGREGATE $SCORE_FILEPATHS)
     fi
 
     echo "ALL JOBS SUBMITTED:"
@@ -324,6 +336,17 @@ else
         cmd="wigToBigWig -clip $wigfilename $CHROMLENGTHS $outfilename && rm -v $wigfilename"
         run $cmd
 
+# AGGREGATE ############################
+    elif [ $jobstep == "AGGREGATE" ]
+    then
+        bedfile=$1
+        shift
+        outfile=$1
+        shift
+        scorefiles="$@"
+        cmd="meekrob-javaGenomicsToolkit ngs.SplitWigIntervalsToDataFrame -s -l $bedfile -o $outfile $scorefiles"
+        run $cmd
+
 #SPP ###################################
     elif [ $jobstep == "SPP" ]
     then
@@ -370,7 +393,8 @@ else
         echo "IDR_THRESH_TRANSFORMED=$IDR_THRESH_TRANSFORMED"
         idr_filter()
         {
-            awk 'BEGIN{OFS="\t"} $12>='"${IDR_THRESH_TRANSFORMED}"' {print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10}' $1
+            #awk 'BEGIN{OFS="\t"} $12>='"${IDR_THRESH_TRANSFORMED}"' {print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10}' $1
+            awk 'BEGIN{OFS="\t"} $12>='"${IDR_THRESH_TRANSFORMED}"' {print $0}' $1
         }
         declare -f idr_filter
         cmd="idr_filter $outtmp | sort -k1 -k2,2n -u > $outfile"
