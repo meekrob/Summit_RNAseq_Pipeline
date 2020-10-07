@@ -19,9 +19,9 @@ BWA_GENOME=/projects/dcking@colostate.edu/support_data/bwa-index/ce11.unmasked.f
 CHROMLENGTHS=/projects/dcking@colostate.edu/support_data/ce11/ce11.chrom.sizes
 # PROJECT ORGANIZATION
 INPUT_DIR=01_FASTQ
-ALIGN_DIR=02_ALIGN
-SPP_DIR=03_SPP
-IDR_DIR=04_IDR
+ALIGN_DIR=03_ALIGN
+SPP_DIR=04_SPP
+IDR_DIR=05_IDR
 
 for dir in $ALIGN_DIR $SPP_DIR $IDR_DIR
 do
