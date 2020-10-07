@@ -22,8 +22,9 @@ INPUT_DIR=01_FASTQ
 ALIGN_DIR=03_ALIGN
 SPP_DIR=04_SPP
 IDR_DIR=05_IDR
+SIG_DIR=06_SIGNAL
 
-for dir in $ALIGN_DIR $SPP_DIR $IDR_DIR
+for dir in $ALIGN_DIR $SPP_DIR $IDR_DIR $SIG_DIR
 do
     mkdir -pv $dir
 done
@@ -119,19 +120,19 @@ then
         if [[ " $JOBSTEPS " =~ " BAM " ]] 
         then
             D=$(deps $align_jid1)
-            bam_jid1=$(sb --job-name=bam-${label}-1 $O $D $SUBMIT BAM ${ALIGN_DIR}/$rep1_sam ${ALIGN_DIR}/$rep1_bam)
+            bam_jid1=$(sb --job-name=bam-${label}-1 $O $D $SUBMIT BAM $ALIGN_DIR/$rep1_sam $ALIGN_DIR/$rep1_bam)
             D=$(deps $align_jid2)
-            bam_jid2=$(sb --job-name=bam-${label}-2 $O $D $SUBMIT BAM ${ALIGN_DIR}/$rep2_sam ${ALIGN_DIR}/$rep2_bam)
+            bam_jid2=$(sb --job-name=bam-${label}-2 $O $D $SUBMIT BAM $ALIGN_DIR/$rep2_sam $ALIGN_DIR/$rep2_bam)
             D=$(deps $align_jid3)
-            bam_jid3=$(sb --job-name=bam-${label}-i $O $D $SUBMIT BAM ${ALIGN_DIR}/$input_sam ${ALIGN_DIR}/$input_bam)
+            bam_jid3=$(sb --job-name=bam-${label}-i $O $D $SUBMIT BAM $ALIGN_DIR/$input_sam $ALIGN_DIR/$input_bam)
             stage_jids="$stage_jids $bam_jid1 $bam_jid2 $bam_jid3"
         fi
 
-        # COMPUTE SIGNAL FILES
+        #BW COMPUTE SIGNAL FILES
         # filenames
         # see function: makeFlankFilename()
         rep1_bw=${label}_1.bw
-        rep1_bw=${label}_2.bw
+        rep2_bw=${label}_2.bw
         input_bw=${label}_input.bw
         # JOBS
         if [[ " $JOBSTEPS " =~ " BW " ]] 
@@ -139,15 +140,29 @@ then
             ntasks="--ntasks=4"
             tim="--time=0:11:00"
             D=$(deps $bam_jid1)
-            bw_jid1=$(sb --job-name=bw-${label}-1 $ntasks $tim $D $SUBMIT BW $ALIGN_DIR/$rep1_bam $rep1_bw)
+            bw_jid1=$(sb --job-name=bw-${label}-1 $ntasks $tim $D $SUBMIT BW $ALIGN_DIR/$rep1_bam $SIG_DIR/$rep1_bw)
             D=$(deps $bam_jid2)
-            bw_jid2=$(sb --job-name=bw-${label}-2 $ntasks $tim $D $SUBMIT BW $ALIGN_DIR/$rep2_bam $rep2_bw)
+            bw_jid2=$(sb --job-name=bw-${label}-2 $ntasks $tim $D $SUBMIT BW $ALIGN_DIR/$rep2_bam $SIG_DIR/$rep2_bw)
             D=$(deps $bam_jid3)
-            bw_jid3=$(sb --job-name=bw-${label}-i $ntasks $tim $D $SUBMIT BW $ALIGN_DIR/$input_bam $input_bw)
+            bw_jid3=$(sb --job-name=bw-${label}-i $ntasks $tim $D $SUBMIT BW $ALIGN_DIR/$input_bam $SIG_DIR/$input_bw)
 
             stage_jids="$stage_jids $bw_jid1 $bw_jid2 $bw_jid3"
         fi
         
+        #BW-SUBTRACT
+        # 
+        rep1_input_subtracted_bw="${label}_1_minus_input.bw"
+        rep2_input_subtracted_bw="${label}_2_minus_input.bw"
+        if [[ " $JOBSTEPS " =~ " BW-SUBTRACT " ]] 
+        then
+            tim="--time=0:03:00"
+            D=$(deps $bw_jid1 $bw_jid3)
+            bws_jid1=$(sb --job-name=${label}-1-inp $tim $D $SUBMIT BW-SUBTRACT $rep1_bw $input_bw $rep1_input_subtracted_bw)
+            D=$(deps $bw_jid2 $bw_jid3)
+            bws_jid2=$(sb --job-name=${label}-2-inp $tim $D $SUBMIT BW-SUBTRACT $rep2_bw $input_bw $rep1_input_subtracted_bw)
+
+            stage_jids="$stage_jids $bws_jid1 $bws_jid2"
+        fi
 
         # PEAK CALLS (SPP)
         # SPP OUTPUT FILENAMES are not specified directly, but have the following format 
@@ -262,21 +277,53 @@ else
 #BW  ###################################
     elif [ $jobstep == "BW" ]
     then
-        inbam=$1
+        inbam_path=$1
+        inbam_filename=$(basename $inbam_path)
+        indir=$(dirname $inbam_path)
         logbw=$2 
-        outbed=${inbam/.bam/.nonlog.bed} # temporary- deleted
+        outdir=$(dirname $logbw)
+        outbed=${inbam_filename/.bam/.nonlog.bed} 
+        # bedToBw.sh - creates a file according to its run parameters
         bamToBw_outfile=$(makeFlankFilename $outbed $FLANK) 
-        logwig=${bamToBw_outfile/nonlogx${FLANK}n.bw/log.wig}# temporary- deleted
+        # example $bamToBw_outfile - LE_nonlogx150n.bw
 
-        cmd="bedtools bamtobed -i $inbam > $outbed"
+        # wig file - output of wigmath.LogTransform
+        logwig=${bamToBw_outfile/nonlogx${FLANK}n.bw/log.wig}
+
+        # get the chromosome locations from the alignment
+        cmd="bedtools bamtobed -i $inbam_path > $outdir/$outbed"
         run $cmd
-        cmd="bedToBw.sh $outbed $FLANK $CHROMLENGTHS -n -bw && rm -v $outbed" 
-        run $cmd
-        cmd="meekrob-javaGenomicsToolkit wigmath.LogTransform -p $SLURM_NTASKS -i $bamToBw_outfile -o $logwig"
-        run $cmd
-        cmd="wigToBigWig $logwig $CHROMLENGTHS $logbw && rm -v $logwig"
+
+        # bedToBw.sh- pad the chromosome locations according to $FLANK, scale by read depth.
+        # creates $outdir/$bamToBw_outfile
+        cmd="bedToBw.sh $outdir/$outbed $FLANK $CHROMLENGTHS -n -bw && rm -v $outdir/$outbed" 
         run $cmd
         
+        # perform a log transformation
+        # creates a wiggle file (ASCII)
+        cmd="meekrob-javaGenomicsToolkit wigmath.LogTransform -p $SLURM_NTASKS -i $outdir/$bamToBw_outfile -o $outdir/$logwig"
+        run $cmd
+
+        # convert to bigWig (binary, compressed)
+        cmd="wigToBigWig $outdir/$logwig $CHROMLENGTHS $outdir/$logbw && rm -v $outdir/$logwig"
+        run $cmd
+        
+#BW-SUBTRACT ###########################
+    elif [ $jobstep == "BW-SUBTRACT" ]
+    then
+        minuend=$1
+        subtrahend=$2
+        outfilename=$3
+        wigfilename=${outfilename/bw/wig}
+        # perform subtraction
+        # creates a wiggle file (ASCII)
+        cmd="meekrob-javaGenomicsToolkit wigmath.Subtract -z -p $SLURM_NTASKS -m $minuend -s $subtrahend -o $wigfilename"
+        run $cmd
+        
+        # convert to bigWig (binary, compressed)
+        cmd="wigToBigWig $wigfilename $CHROMLENGTHS $outfilename && rm -v $wigfilename"
+        run $cmd
+
 #SPP ###################################
     elif [ $jobstep == "SPP" ]
     then
