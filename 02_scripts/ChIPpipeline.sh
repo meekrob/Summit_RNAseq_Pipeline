@@ -155,11 +155,12 @@ then
         rep2_input_subtracted_bw="${label}_2_minus_input.bw"
         if [[ " $JOBSTEPS " =~ " BW-SUBTRACT " ]] 
         then
+            ntasks="--ntasks=4"
             tim="--time=0:03:00"
             D=$(deps $bw_jid1 $bw_jid3)
-            bws_jid1=$(sb --job-name=${label}-1-inp $tim $D $SUBMIT BW-SUBTRACT $rep1_bw $input_bw $rep1_input_subtracted_bw)
+            bws_jid1=$(sb --job-name=${label}_1-${label}i $ntasks $tim $D $SUBMIT BW-SUBTRACT $rep1_bw $input_bw $rep1_input_subtracted_bw)
             D=$(deps $bw_jid2 $bw_jid3)
-            bws_jid2=$(sb --job-name=${label}-2-inp $tim $D $SUBMIT BW-SUBTRACT $rep2_bw $input_bw $rep1_input_subtracted_bw)
+            bws_jid2=$(sb --job-name=${label}_2-${label}i $ntasks $tim $D $SUBMIT BW-SUBTRACT $rep2_bw $input_bw $rep1_input_subtracted_bw)
 
             stage_jids="$stage_jids $bws_jid1 $bws_jid2"
         fi
@@ -216,7 +217,7 @@ then
             #log_jid=$(sb --ntasks=1 --time=0:01:00 --job-name=$label.catlg --output=${label}.catlogs-%j.out $D $SUBMIT LOG $BASE_LOGFILE $lognames)
             if [ -n "$lognames" ]
             then
-                echo "cat $lognames >> $BASE_LOGFILE && rm -v $lognames" >> $BASE_LOGFILE
+                echo "cat $lognames >> $BASE_LOGFILE && rm -v $lognames" | tee -a  $BASE_LOGFILE
             fi
         fi
 
@@ -233,8 +234,7 @@ then
     fi
 
     echo "ALL JOBS SUBMITTED:"
-    echo ">${all_ids}<"
-    all_ids=$(echo $all_ids) # remove ws
+    all_ids=$(echo $all_ids) # trim ws
     echo "jid=${all_ids// /,}"
 
 else 
@@ -281,6 +281,7 @@ else
         inbam_filename=$(basename $inbam_path)
         indir=$(dirname $inbam_path)
         logbw=$2 
+        logbw_filename=$(basename $logbw)
         outdir=$(dirname $logbw)
         outbed=${inbam_filename/.bam/.nonlog.bed} 
         # bedToBw.sh - creates a file according to its run parameters
@@ -305,7 +306,7 @@ else
         run $cmd
 
         # convert to bigWig (binary, compressed)
-        cmd="wigToBigWig $outdir/$logwig $CHROMLENGTHS $outdir/$logbw && rm -v $outdir/$logwig"
+        cmd="wigToBigWig $outdir/$logwig $CHROMLENGTHS $outdir/$logbw_filename && rm -v $outdir/$logwig"
         run $cmd
         
 #BW-SUBTRACT ###########################
